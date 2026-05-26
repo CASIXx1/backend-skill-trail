@@ -1,0 +1,23 @@
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Go
+bin/
+dist/
+*.test
+*.out
+coverage.*
+
+# Local build artifacts
+tmp/
+*.log
+
+# Docker
+.docker/
+
+# ecspresso
+.ecspresso/
+ecspresso/*.rendered.json
