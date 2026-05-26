@@ -1,0 +1,35 @@
+{
+  "family": "{{ must_env `ECS_SERVICE_NAME` }}",
+  "taskRoleArn": "{{ must_env `TASK_ROLE_ARN` }}",
+  "executionRoleArn": "{{ must_env `TASK_EXECUTION_ROLE_ARN` }}",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "{{ must_env `CONTAINER_NAME` }}",
+      "image": "{{ must_env `IMAGE_URI` }}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": {{ must_env `CONTAINER_PORT` }},
+          "hostPort": {{ must_env `CONTAINER_PORT` }},
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "{{ must_env `CONTAINER_PORT` }}"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "{{ env `TASK_CPU` `256` }}",
+  "memory": "{{ env `TASK_MEMORY` `512` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  }
+}

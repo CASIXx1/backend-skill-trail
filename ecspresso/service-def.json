@@ -1,0 +1,17 @@
+{
+  "serviceName": "{{ must_env `ECS_SERVICE_NAME` }}",
+  "desiredCount": {{ env `DESIRED_COUNT` `1` }},
+  "launchType": "FARGATE",
+  "platformVersion": "LATEST",
+  "deploymentConfiguration": {
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  },
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": {{ must_env `SUBNET_IDS_JSON` }},
+      "securityGroups": {{ must_env `SECURITY_GROUP_IDS_JSON` }},
+      "assignPublicIp": "{{ must_env `ASSIGN_PUBLIC_IP` }}"
+    }
+  }
+}
