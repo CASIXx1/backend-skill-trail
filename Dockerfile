@@ -2,10 +2,13 @@ FROM golang:1.18 AS builder
 
 WORKDIR /app
 
+ARG TARGETOS
+ARG TARGETARCH
+
 COPY go.mod ./
 COPY cmd ./cmd
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /server ./cmd/server
 
 FROM scratch
 

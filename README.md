@@ -53,3 +53,17 @@ Render the ecspresso files:
 ./scripts/ecspresso.sh render task-definition
 ./scripts/ecspresso.sh render service-definition
 ```
+
+Compare with the current ECS state:
+
+```sh
+./scripts/ecspresso.sh diff
+```
+
+Deploy the service:
+
+```sh
+./scripts/ecspresso.sh deploy
+```
+
+In ecspresso v2, `deploy` creates the ECS service when it does not exist yet.

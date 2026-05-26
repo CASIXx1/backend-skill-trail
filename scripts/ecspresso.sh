@@ -40,6 +40,19 @@ if (( ${#missing_vars[@]} > 0 )); then
   exit 1
 fi
 
+if [[ "$ASSIGN_PUBLIC_IP" != "ENABLED" && "$ASSIGN_PUBLIC_IP" != "DISABLED" ]]; then
+  echo "ASSIGN_PUBLIC_IP must be ENABLED or DISABLED." >&2
+  exit 1
+fi
+
+for var in SUBNET_IDS_JSON SECURITY_GROUP_IDS_JSON; do
+  if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and contains(",") | not)' >/dev/null <<<"${!var}"; then
+    echo "$var must be a non-empty JSON array of strings." >&2
+    echo "Example: SUBNET_IDS_JSON='[\"subnet-xxxxxxxx\",\"subnet-yyyyyyyy\"]'" >&2
+    exit 1
+  fi
+done
+
 export IMAGE_URI="${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
 
 exec ecspresso "$@" --config ecspresso/ecspresso.yml
