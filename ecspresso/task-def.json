@@ -1,12 +1,12 @@
 {
-  "family": "{{ must_env `ECS_SERVICE_NAME` }}",
-  "taskRoleArn": "{{ must_env `TASK_ROLE_ARN` }}",
-  "executionRoleArn": "{{ must_env `TASK_EXECUTION_ROLE_ARN` }}",
+  "family": "{{ tfstate `output.api_ecs_service_name` }}",
+  "taskRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task.arn` }}",
+  "executionRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task_execution.arn` }}",
   "networkMode": "awsvpc",
   "containerDefinitions": [
     {
       "name": "{{ must_env `CONTAINER_NAME` }}",
-      "image": "{{ must_env `IMAGE_URI` }}",
+      "image": "{{ tfstate `module.ecr.aws_ecr_repository.this['api'].repository_url` }}:{{ must_env `IMAGE_TAG` }}",
       "essential": true,
       "portMappings": [
         {

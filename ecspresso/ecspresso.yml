@@ -4,3 +4,7 @@ service: '{{ must_env `ECS_SERVICE_NAME` }}'
 service_definition: service-def.json
 task_definition: task-def.json
 timeout: 10m
+plugins:
+  - name: tfstate
+    config:
+      url: '{{ must_env `TFSTATE_URL` }}'

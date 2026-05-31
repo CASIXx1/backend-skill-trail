@@ -1,5 +1,5 @@
 {
-  "serviceName": "{{ must_env `ECS_SERVICE_NAME` }}",
+  "serviceName": "{{ tfstate `output.api_ecs_service_name` }}",
   "desiredCount": {{ env `DESIRED_COUNT` `1` }},
   "launchType": "FARGATE",
   "platformVersion": "LATEST",
@@ -9,8 +9,13 @@
   },
   "networkConfiguration": {
     "awsvpcConfiguration": {
-      "subnets": {{ must_env `SUBNET_IDS_JSON` }},
-      "securityGroups": {{ must_env `SECURITY_GROUP_IDS_JSON` }},
+      "subnets": [
+        "{{ tfstate `module.network.aws_subnet.private_1a.id` }}",
+        "{{ tfstate `module.network.aws_subnet.private_1c.id` }}"
+      ],
+      "securityGroups": [
+        "{{ tfstate `module.security_groups.aws_security_group.ecs_tasks.id` }}"
+      ],
       "assignPublicIp": "{{ must_env `ASSIGN_PUBLIC_IP` }}"
     }
   }

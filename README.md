@@ -33,37 +33,34 @@ Set the ECS values in `.env`.
 Required ECS values:
 
 ```env
+TFSTATE_URL=s3://your-terraform-state-bucket/path/to/terraform.tfstate
 ECS_CLUSTER_NAME=your-cluster-name
 ECS_SERVICE_NAME=backend-skill-trail
 CONTAINER_NAME=app
 CONTAINER_PORT=8080
-TASK_EXECUTION_ROLE_ARN=arn:aws:iam::123456789012:role/ecsTaskExecutionRole
-TASK_ROLE_ARN=arn:aws:iam::123456789012:role/ecsTaskRole
-SUBNET_IDS_JSON='["subnet-xxxxxxxx","subnet-yyyyyyyy"]'
-SECURITY_GROUP_IDS_JSON='["sg-xxxxxxxx"]'
 ASSIGN_PUBLIC_IP=DISABLED
 ```
 
-`SUBNET_IDS_JSON` and `SECURITY_GROUP_IDS_JSON` must be JSON arrays wrapped in single quotes because `.env` is loaded by the shell.
+The task definition and service definition resolve IAM roles, ECR repository URL, private subnet IDs, ECS task security group ID, and service name from `TFSTATE_URL`.
 
 Render the ecspresso files:
 
 ```sh
-./scripts/ecspresso.sh render config
-./scripts/ecspresso.sh render task-definition
-./scripts/ecspresso.sh render service-definition
+ecspresso --envfile .env --config ecspresso/ecspresso.yml render config
+ecspresso --envfile .env --config ecspresso/ecspresso.yml render task-definition
+ecspresso --envfile .env --config ecspresso/ecspresso.yml render service-definition
 ```
 
 Compare with the current ECS state:
 
 ```sh
-./scripts/ecspresso.sh diff
+ecspresso --envfile .env --config ecspresso/ecspresso.yml diff
 ```
 
 Deploy the service:
 
 ```sh
-./scripts/ecspresso.sh deploy
+ecspresso --envfile .env --config ecspresso/ecspresso.yml deploy
 ```
 
 In ecspresso v2, `deploy` creates the ECS service when it does not exist yet.
