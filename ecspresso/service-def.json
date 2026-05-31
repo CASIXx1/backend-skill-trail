@@ -1,0 +1,32 @@
+{
+  "serviceName": "{{ tfstate `output.api_ecs_service_name` }}",
+  "desiredCount": {{ env `DESIRED_COUNT` `1` }},
+  "launchType": "FARGATE",
+  "platformVersion": "LATEST",
+  "availabilityZoneRebalancing": "ENABLED",
+  "propagateTags": "NONE",
+  "healthCheckGracePeriodSeconds": 0,
+  "deploymentConfiguration": {
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "{{ tfstate `output.api_target_group_arn` }}",
+      "containerName": "{{ must_env `CONTAINER_NAME` }}",
+      "containerPort": {{ must_env `CONTAINER_PORT` }}
+    }
+  ],
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "{{ tfstate `module.network.aws_subnet.private_1a.id` }}",
+        "{{ tfstate `module.network.aws_subnet.private_1c.id` }}"
+      ],
+      "securityGroups": [
+        "{{ tfstate `module.security_groups.aws_security_group.ecs_tasks.id` }}"
+      ],
+      "assignPublicIp": "{{ must_env `ASSIGN_PUBLIC_IP` }}"
+    }
+  }
+}

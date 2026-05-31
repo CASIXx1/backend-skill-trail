@@ -1,0 +1,35 @@
+{
+  "family": "{{ tfstate `output.api_ecs_service_name` }}",
+  "taskRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task.arn` }}",
+  "executionRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task_execution.arn` }}",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "{{ must_env `CONTAINER_NAME` }}",
+      "image": "{{ tfstate `module.ecr.aws_ecr_repository.this['api'].repository_url` }}:{{ must_env `IMAGE_TAG` }}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": {{ must_env `CONTAINER_PORT` }},
+          "hostPort": {{ must_env `CONTAINER_PORT` }},
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "{{ must_env `CONTAINER_PORT` }}"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "{{ env `TASK_CPU` `256` }}",
+  "memory": "{{ env `TASK_MEMORY` `512` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  }
+}
