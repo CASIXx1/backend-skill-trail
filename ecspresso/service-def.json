@@ -3,10 +3,20 @@
   "desiredCount": {{ env `DESIRED_COUNT` `1` }},
   "launchType": "FARGATE",
   "platformVersion": "LATEST",
+  "availabilityZoneRebalancing": "ENABLED",
+  "propagateTags": "NONE",
+  "healthCheckGracePeriodSeconds": 0,
   "deploymentConfiguration": {
     "maximumPercent": 200,
     "minimumHealthyPercent": 100
   },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "{{ tfstate `output.api_target_group_arn` }}",
+      "containerName": "{{ must_env `CONTAINER_NAME` }}",
+      "containerPort": {{ must_env `CONTAINER_PORT` }}
+    }
+  ],
   "networkConfiguration": {
     "awsvpcConfiguration": {
       "subnets": [
