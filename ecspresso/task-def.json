@@ -1,12 +1,12 @@
 {
   "family": "{{ tfstate `output.api_ecs_service_name` }}",
-  "taskRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task.arn` }}",
-  "executionRoleArn": "{{ tfstate `module.ecs_iam.aws_iam_role.task_execution.arn` }}",
+  "taskRoleArn": "{{ tfstate `output.ecs_task_role_arn` }}",
+  "executionRoleArn": "{{ tfstate `output.ecs_task_execution_role_arn` }}",
   "networkMode": "awsvpc",
   "containerDefinitions": [
     {
       "name": "{{ must_env `CONTAINER_NAME` }}",
-      "image": "{{ tfstate `module.ecr.aws_ecr_repository.this['api'].repository_url` }}:{{ must_env `IMAGE_TAG` }}",
+      "image": "{{ tfstate `output.api_ecr_repository_url` }}:{{ must_env `IMAGE_TAG` }}",
       "essential": true,
       "portMappings": [
         {
@@ -20,7 +20,32 @@
           "name": "PORT",
           "value": "{{ must_env `CONTAINER_PORT` }}"
         }
-      ]
+      ],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "options": {
+          "Name": "cloudwatch_logs",
+          "region": "{{ must_env `AWS_REGION` }}",
+          "log_group_name": "{{ tfstate `output.api_log_group_name` }}",
+          "log_stream_prefix": "api/"
+        }
+      }
+    },
+    {
+      "name": "log_router",
+      "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable",
+      "essential": true,
+      "firelensConfiguration": {
+        "type": "fluentbit"
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "{{ tfstate `output.api_log_group_name` }}",
+          "awslogs-region": "{{ must_env `AWS_REGION` }}",
+          "awslogs-stream-prefix": "firelens"
+        }
+      }
     }
   ],
   "requiresCompatibilities": [
