@@ -28,7 +28,7 @@ Docker image を build して ECR に push します。
 
 ## GitHub Actions CI
 
-GitHub Actions はまず CI のみ構築しています。AWS OIDC、ECR push、ECS deploy はまだ行いません。
+GitHub Actions はまず CI と AWS 接続確認のみ構築しています。ECR push、ECS deploy はまだ行いません。
 
 CI は push と pull request で起動し、以下を確認します。
 
@@ -36,7 +36,25 @@ CI は push と pull request で起動し、以下を確認します。
 - `go vet ./...`
 - Docker image build (`linux/arm64`)
 
-AWS 連携を追加する段階で、OIDC assume role、ECR push、Terraform remote state 参照、ecspresso deploy を別 workflow または deploy job として追加します。
+## GitHub Actions AWS 接続確認
+
+AWS 接続確認 workflow は GitHub Environment `dev` の variables を使い、AWS OIDC で backend 用 IAM role を assume して `aws sts get-caller-identity` だけを実行します。
+
+Environment `dev` に以下の variables を設定します。
+
+```env
+AWS_REGION=ap-northeast-1
+AWS_ROLE_ARN=<terraform output -raw github_actions_backend_role_arn の値>
+```
+
+OIDC trust policy の前提:
+
+- 許可 repository: `CASIXx1/backend-skill-trail`
+- 許可 branch: `refs/heads/*`
+
+現在は検証用に `refs/heads/*` を許可しているため、`main` 以外の feature branch からも role を assume できます。本番運用に移す場合は `refs/heads/main` などに絞ります。
+
+次の段階で、ECR push、Terraform remote state 参照、ecspresso deploy を別 workflow または deploy job として追加します。
 
 ## ローカル ecspresso render
 
