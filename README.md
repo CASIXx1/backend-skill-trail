@@ -26,6 +26,18 @@ Docker image を build して ECR に push します。
 
 `docker push` が成功すると、push した image URI が表示されます。
 
+## GitHub Actions CI
+
+GitHub Actions はまず CI のみ構築しています。AWS OIDC、ECR push、ECS deploy はまだ行いません。
+
+CI は push と pull request で起動し、以下を確認します。
+
+- `go test ./...`
+- `go vet ./...`
+- Docker image build (`linux/arm64`)
+
+AWS 連携を追加する段階で、OIDC assume role、ECR push、Terraform remote state 参照、ecspresso deploy を別 workflow または deploy job として追加します。
+
 ## ローカル ecspresso render
 
 `.env` に ECS 用の値を設定します。
