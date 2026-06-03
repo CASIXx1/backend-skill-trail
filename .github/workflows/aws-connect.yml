@@ -20,6 +20,11 @@ jobs:
     environment: dev
 
     steps:
+      - name: Mask GitHub environment variables
+        run: |
+          echo "::add-mask::${AWS_REGION}"
+          echo "::add-mask::${AWS_ROLE_ARN}"
+
       - name: Validate GitHub variables
         run: |
           set -euo pipefail
@@ -37,6 +42,10 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          mask-aws-account-id: true
 
       - name: Verify AWS identity
-        run: aws sts get-caller-identity
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity >/dev/null
+          echo "AWS OIDC connection verified."
