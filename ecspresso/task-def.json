@@ -8,6 +8,7 @@
       "name": "{{ must_env `CONTAINER_NAME` }}",
       "image": "{{ tfstate `output.api_ecr_repository_url` }}:{{ must_env `IMAGE_TAG` }}",
       "essential": true,
+      "stopTimeout": 30,
       "portMappings": [
         {
           "containerPort": {{ must_env `CONTAINER_PORT` }},

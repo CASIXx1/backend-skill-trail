@@ -31,7 +31,7 @@ func main() {
 
 	go func() {
 		log.Printf("server listening on %s", addr)
-		if err := server.ListenAndServe(); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
