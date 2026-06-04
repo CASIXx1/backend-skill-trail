@@ -14,31 +14,32 @@ jobs:
   push:
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
 
     steps:
-      - name: Mask and export GitHub environment variables
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const os = require('os');
-            const values = {
-              AWS_REGION: '${{ vars.AWS_REGION }}',
-              AWS_ROLE_ARN: '${{ vars.AWS_ROLE_ARN }}',
-              TF_STATE_BUCKET: '${{ vars.TF_STATE_BUCKET }}',
-              TF_STATE_KEY: '${{ vars.TF_STATE_KEY }}',
-              IMAGE_TAG: '${{ github.sha }}',
-              DOCKER_PLATFORM: 'linux/arm64',
-            };
+      - name: Validate and mask GitHub environment secrets
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION AWS_ROLE_ARN TF_STATE_BUCKET TF_STATE_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret: ${name}" >&2
+              exit 1
+            fi
+            echo "::add-mask::${!name}"
+          done
 
-            for (const [name, value] of Object.entries(values)) {
-              if (!value) {
-                core.setFailed(`Missing required variable: ${name}`);
-                return;
-              }
-              core.setSecret(value);
-              fs.appendFileSync(process.env.GITHUB_ENV, `${name}=${value}${os.EOL}`);
-            }
+          image_tag="${GITHUB_SHA}"
+          docker_platform="linux/arm64"
+          echo "::add-mask::${image_tag}"
+          echo "::add-mask::${docker_platform}"
+          {
+            echo "IMAGE_TAG=${image_tag}"
+            echo "DOCKER_PLATFORM=${docker_platform}"
+          } >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v4

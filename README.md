@@ -35,7 +35,7 @@ Docker image を build して ECR に push します。
 
 ECS deploy はまだ行いません。
 
-GitHub Environment `dev` に以下の variables を設定します。
+GitHub Environment `dev` に以下の secrets を設定します。
 
 ```env
 AWS_REGION=<AWS region>
