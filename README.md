@@ -85,6 +85,13 @@ ecspresso --envfile .env --config ecspresso/ecspresso.yml deploy
 
 ecspresso v2 では、`deploy` 実行時に ECS service が存在しない場合は作成されます。
 
+ECS service を削除する場合は、先に desired count を `0` にします。
+
+```sh
+ecspresso --envfile .env --config ecspresso/ecspresso.yml scale --tasks 0
+ecspresso --envfile .env --config ecspresso/ecspresso.yml delete --force
+```
+
 ## FireLens サイドカー構成
 
 API ECS task は現在、`app` という application container を実行します。FireLens を追加する場合、同じ task 内で 2 つの container を実行します。
