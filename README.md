@@ -11,7 +11,7 @@ cp .env.example .env
 `.env` に以下の値を設定します。
 
 ```env
-AWS_REGION=ap-northeast-1
+AWS_REGION=<AWS region>
 AWS_PROFILE=your-profile-name
 ECR_REPOSITORY_URL=123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/backend-skill-trail
 IMAGE_TAG=local
@@ -26,35 +26,25 @@ Docker image を build して ECR に push します。
 
 `docker push` が成功すると、push した image URI が表示されます。
 
-## GitHub Actions CI
+## GitHub Actions
 
-GitHub Actions はまず CI と AWS 接続確認のみ構築しています。ECR push、ECS deploy はまだ行いません。
+| Workflow | Scope |
+| --- | --- |
+| `ci.yml` | test / vet / Docker build |
+| `ecr-push.yml` | ECR push |
 
-CI は push と pull request で起動し、以下を確認します。
+ECS deploy はまだ行いません。
 
-- `go test ./...`
-- `go vet ./...`
-- Docker image build (`linux/arm64`)
-
-## GitHub Actions AWS 接続確認
-
-AWS 接続確認 workflow は GitHub Environment `dev` の variables を使い、AWS OIDC で backend 用 IAM role を assume して `aws sts get-caller-identity` だけを実行します。
-
-Environment `dev` に以下の variables を設定します。
+GitHub Environment `dev` に以下の variables を設定します。
 
 ```env
-AWS_REGION=ap-northeast-1
+AWS_REGION=<AWS region>
 AWS_ROLE_ARN=<terraform output -raw github_actions_backend_role_arn の値>
+TF_STATE_BUCKET=<Terraform remote state bucket>
+TF_STATE_KEY=<Terraform remote state key>
 ```
 
-OIDC trust policy の前提:
-
-- 許可 repository: `CASIXx1/backend-skill-trail`
-- 許可 branch: `refs/heads/*`
-
-現在は検証用に `refs/heads/*` を許可しているため、`main` 以外の feature branch からも role を assume できます。本番運用に移す場合は `refs/heads/main` などに絞ります。
-
-次の段階で、ECR push、Terraform remote state 参照、ecspresso deploy を別 workflow または deploy job として追加します。
+OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。ECR repository URL は tfstate の `output.api_ecr_repository_url` から取得します。
 
 ## ローカル ecspresso render
 
