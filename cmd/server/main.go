@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -37,6 +38,15 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("server stopped")
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
