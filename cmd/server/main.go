@@ -17,8 +17,13 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 
 	addr := ":" + port
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
 	log.Printf("server listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
