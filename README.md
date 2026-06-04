@@ -11,7 +11,7 @@ cp .env.example .env
 `.env` に以下の値を設定します。
 
 ```env
-AWS_REGION=ap-northeast-1
+AWS_REGION=<AWS region>
 AWS_PROFILE=your-profile-name
 ECR_REPOSITORY_URL=123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/backend-skill-trail
 IMAGE_TAG=local
@@ -25,6 +25,26 @@ Docker image を build して ECR に push します。
 ```
 
 `docker push` が成功すると、push した image URI が表示されます。
+
+## GitHub Actions
+
+| Workflow | Scope |
+| --- | --- |
+| `ci.yml` | test / vet / Docker build |
+| `ecr-push.yml` | ECR push |
+
+ECS deploy はまだ行いません。
+
+GitHub Environment `dev` に以下の secrets を設定します。
+
+```env
+AWS_REGION=<AWS region>
+AWS_ROLE_ARN=<terraform output -raw github_actions_backend_role_arn の値>
+TF_STATE_BUCKET=<Terraform remote state bucket>
+TF_STATE_KEY=<Terraform remote state key>
+```
+
+OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。ECR repository URL は tfstate の `output.api_ecr_repository_url` から取得します。
 
 ## ローカル ecspresso render
 
@@ -64,6 +84,13 @@ ecspresso --envfile .env --config ecspresso/ecspresso.yml deploy
 ```
 
 ecspresso v2 では、`deploy` 実行時に ECS service が存在しない場合は作成されます。
+
+ECS service を削除する場合は、先に desired count を `0` にします。
+
+```sh
+ecspresso --envfile .env --config ecspresso/ecspresso.yml scale --tasks 0
+ecspresso --envfile .env --config ecspresso/ecspresso.yml delete --force
+```
 
 ## FireLens サイドカー構成
 
