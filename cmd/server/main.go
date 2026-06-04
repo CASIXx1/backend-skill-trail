@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -22,10 +25,18 @@ func main() {
 		Handler: mux,
 	}
 
-	log.Printf("server listening on %s", addr)
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Printf("server listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutdown signal received")
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
