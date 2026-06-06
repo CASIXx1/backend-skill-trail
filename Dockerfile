@@ -5,7 +5,7 @@ WORKDIR /app
 ARG TARGETOS
 ARG TARGETARCH
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /server ./cmd/server
