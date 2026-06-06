@@ -1,4 +1,4 @@
-name: ECR Push
+name: Deploy Backend
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 jobs:
-  push:
+  deploy:
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -31,6 +31,11 @@ jobs:
             fi
             echo "::add-mask::${!name}"
           done
+
+          aws_account_id="$(awk -F: '{print $5}' <<< "$AWS_ROLE_ARN")"
+          if [[ -n "$aws_account_id" ]]; then
+            echo "::add-mask::${aws_account_id}"
+          fi
 
           image_tag="${GITHUB_SHA}"
           docker_platform="linux/arm64"
@@ -60,7 +65,7 @@ jobs:
 
           credentials="$(aws sts assume-role-with-web-identity \
             --role-arn "$AWS_ROLE_ARN" \
-            --role-session-name "github-actions-ecr-push" \
+            --role-session-name "github-actions-deploy-backend" \
             --web-identity-token "$oidc_token" \
             --duration-seconds 3600 \
             --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
@@ -82,19 +87,35 @@ jobs:
             echo "AWS_DEFAULT_REGION=${AWS_REGION}"
           } >> "$GITHUB_ENV"
 
-      - name: Load ECR repository URL from Terraform state
+      - name: Load deployment values from Terraform state
         run: |
           set -euo pipefail
           aws s3 cp "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" /tmp/terraform.tfstate >/dev/null
 
           ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' /tmp/terraform.tfstate)"
-          if [[ -z "$ecr_repository_url" ]]; then
-            echo "Missing required Terraform state output: api_ecr_repository_url" >&2
-            exit 1
-          fi
+          ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' /tmp/terraform.tfstate)"
+          ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' /tmp/terraform.tfstate)"
 
-          echo "::add-mask::${ecr_repository_url}"
-          echo "ECR_REPOSITORY_URL=${ecr_repository_url}" >> "$GITHUB_ENV"
+          for name in ecr_repository_url ecs_cluster_name ecs_service_name; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required Terraform state output: ${name}" >&2
+              exit 1
+            fi
+            echo "::add-mask::${!name}"
+          done
+
+          tfstate_url="s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}"
+          echo "::add-mask::${tfstate_url}"
+
+          {
+            echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
+            echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
+            echo "ECS_SERVICE_NAME=${ecs_service_name}"
+            echo "TFSTATE_URL=${tfstate_url}"
+            echo "CONTAINER_NAME=app"
+            echo "CONTAINER_PORT=8080"
+            echo "ASSIGN_PUBLIC_IP=DISABLED"
+          } >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -121,3 +142,21 @@ jobs:
             --push \
             .
           echo "ECR image push completed."
+
+      - name: Install ecspresso
+        uses: kayac/ecspresso@v2
+        with:
+          version: v2.8.4
+
+      - name: Render ecspresso definitions
+        run: |
+          set -euo pipefail
+          ecspresso --config ecspresso/ecspresso.yml render config >/dev/null
+          ecspresso --config ecspresso/ecspresso.yml render task-definition >/dev/null
+          ecspresso --config ecspresso/ecspresso.yml render service-definition >/dev/null
+          echo "ecspresso render completed."
+
+      - name: Deploy with ecspresso
+        run: |
+          set -euo pipefail
+          ecspresso --config ecspresso/ecspresso.yml deploy
