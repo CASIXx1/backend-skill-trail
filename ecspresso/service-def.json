@@ -28,7 +28,7 @@
         "{{ tfstate `module.network.aws_subnet.private_1c.id` }}"
       ],
       "securityGroups": [
-        "{{ tfstate `module.security_groups.aws_security_group.ecs_tasks.id` }}"
+        "{{ tfstate `output.ecs_task_security_group_id` }}"
       ],
       "assignPublicIp": "{{ must_env `ASSIGN_PUBLIC_IP` }}"
     }
