@@ -31,9 +31,7 @@ Docker image を build して ECR に push します。
 | Workflow | Scope |
 | --- | --- |
 | `ci.yml` | test / vet / Docker build |
-| `ecr-push.yml` | ECR push |
-
-ECS deploy はまだ行いません。
+| `deploy-backend.yml` | ECR push / ECS deploy |
 
 GitHub Environment `dev` に以下の secrets を設定します。
 
