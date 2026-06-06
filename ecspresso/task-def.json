@@ -20,6 +20,32 @@
         {
           "name": "PORT",
           "value": "{{ must_env `CONTAINER_PORT` }}"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "{{ tfstate `output.database_writer_endpoint` }}"
+        },
+        {
+          "name": "DB_READER_HOST",
+          "value": "{{ tfstate `output.database_reader_endpoint` }}"
+        },
+        {
+          "name": "DB_PORT",
+          "value": "{{ tfstate `output.database_port` }}"
+        },
+        {
+          "name": "DB_NAME",
+          "value": "{{ tfstate `output.database_name` }}"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DB_USER",
+          "valueFrom": "{{ tfstate `output.database_master_user_secret_arn` }}:username::"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "{{ tfstate `output.database_master_user_secret_arn` }}:password::"
         }
       ],
       "logConfiguration": {

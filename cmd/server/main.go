@@ -2,14 +2,30 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	_ "github.com/lib/pq"
 )
+
+const dbPingTimeout = 3 * time.Second
+
+type dbConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Name     string
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -19,6 +35,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/db/health", dbHealthHandler)
 
 	addr := ":" + port
 	server := &http.Server{
@@ -53,5 +70,78 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func dbHealthHandler(w http.ResponseWriter, r *http.Request) {
+	cfg, err := dbConfigFromEnv()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "ng",
+			"error":  "database configuration is missing",
+		})
+		return
+	}
+
+	db, err := sql.Open("postgres", postgresDSN(cfg))
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "ng",
+			"error":  "database connection setup failed",
+		})
+		return
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbPingTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "ng",
+			"error":  "database ping failed",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func dbConfigFromEnv() (dbConfig, error) {
+	cfg := dbConfig{
+		Host:     os.Getenv("DB_HOST"),
+		Port:     os.Getenv("DB_PORT"),
+		User:     os.Getenv("DB_USER"),
+		Password: os.Getenv("DB_PASSWORD"),
+		Name:     os.Getenv("DB_NAME"),
+	}
+
+	if cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" || cfg.Name == "" {
+		return dbConfig{}, fmt.Errorf("missing database environment variable")
+	}
+
+	return cfg, nil
+}
+
+func postgresDSN(cfg dbConfig) string {
+	dsn := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(cfg.User, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, cfg.Port),
+		Path:   "/" + cfg.Name,
+	}
+
+	query := dsn.Query()
+	query.Set("sslmode", "require")
+	dsn.RawQuery = query.Encode()
+
+	return dsn.String()
+}
+
+func writeJSON(w http.ResponseWriter, statusCode int, body map[string]string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		log.Printf("failed to write response: %v", err)
 	}
 }
