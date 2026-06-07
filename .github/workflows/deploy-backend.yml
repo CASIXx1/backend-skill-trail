@@ -129,13 +129,13 @@ jobs:
         run: |
           set -euo pipefail
           export MIGRATION_COMMAND=up
-          ecspresso --config ecspresso/migration/ecspresso.yml run --wait --watch-container "$MIGRATION_CONTAINER_NAME"
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait
 
       - name: Verify migration with ecspresso
         run: |
           set -euo pipefail
           export MIGRATION_COMMAND=verify
-          ecspresso --config ecspresso/migration/ecspresso.yml run --wait --watch-container "$MIGRATION_CONTAINER_NAME"
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait
 
       - name: Deploy with ecspresso
         run: |
