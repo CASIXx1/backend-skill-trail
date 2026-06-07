@@ -93,10 +93,12 @@ jobs:
           aws s3 cp "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" /tmp/terraform.tfstate >/dev/null
 
           ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' /tmp/terraform.tfstate)"
+          migration_ecr_repository_url="$(jq -r '.outputs.migration_ecr_repository_url.value // empty' /tmp/terraform.tfstate)"
           ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' /tmp/terraform.tfstate)"
           ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' /tmp/terraform.tfstate)"
+          migration_ecspresso_env="$(jq -c '.outputs.migration_ecspresso_env.value // empty' /tmp/terraform.tfstate)"
 
-          for name in ecr_repository_url ecs_cluster_name ecs_service_name; do
+          for name in ecr_repository_url migration_ecr_repository_url ecs_cluster_name ecs_service_name migration_ecspresso_env; do
             if [[ -z "${!name}" ]]; then
               echo "Missing required Terraform state output: ${name}" >&2
               exit 1
@@ -104,17 +106,71 @@ jobs:
             echo "::add-mask::${!name}"
           done
 
+          sensitive_output_names=(
+            api_log_group_name
+            database_master_user_secret_arn
+            database_name
+            database_port
+            database_reader_endpoint
+            database_writer_endpoint
+            migration_log_group_name
+          )
+
+          for output_name in "${sensitive_output_names[@]}"; do
+            value="$(jq -r --arg name "$output_name" '.outputs[$name].value // empty' /tmp/terraform.tfstate)"
+            if [[ -n "$value" ]]; then
+              echo "::add-mask::${value}"
+            fi
+          done
+
+          jq -r 'to_entries[] | select(.value | type == "string") | .value' <<< "$migration_ecspresso_env" \
+            | while IFS= read -r value; do
+                if [[ -n "$value" ]]; then
+                  echo "::add-mask::${value}"
+                fi
+              done
+
+          migration_env_keys=(
+            ASSIGN_PUBLIC_IP
+            CONTAINER_NAME
+            ECS_CLUSTER_NAME
+            SECURITY_GROUP_IDS
+            SUBNET_IDS
+            TASK_EXECUTION_ROLE_ARN
+            TASK_ROLE_ARN
+          )
+
+          for key in "${migration_env_keys[@]}"; do
+            value="$(jq -r --arg key "$key" '.[$key] // empty' <<< "$migration_ecspresso_env")"
+            if [[ -z "$value" ]]; then
+              echo "Missing required migration ecspresso env: ${key}" >&2
+              exit 1
+            fi
+            echo "::add-mask::${value}"
+            echo "MIGRATION_${key}=${value}" >> "$GITHUB_ENV"
+          done
+
+          migration_subnet_ids="$(jq -r '.SUBNET_IDS' <<< "$migration_ecspresso_env")"
+          migration_security_group_ids="$(jq -r '.SECURITY_GROUP_IDS' <<< "$migration_ecspresso_env")"
+          migration_subnet_ids_json="$(jq -Rn --arg value "$migration_subnet_ids" '$value | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
+          migration_security_group_ids_json="$(jq -Rn --arg value "$migration_security_group_ids" '$value | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
+          echo "::add-mask::${migration_subnet_ids_json}"
+          echo "::add-mask::${migration_security_group_ids_json}"
+
           tfstate_url="s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}"
           echo "::add-mask::${tfstate_url}"
 
           {
             echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
+            echo "MIGRATION_ECR_REPOSITORY_URL=${migration_ecr_repository_url}"
             echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
             echo "ECS_SERVICE_NAME=${ecs_service_name}"
             echo "TFSTATE_URL=${tfstate_url}"
             echo "CONTAINER_NAME=app"
             echo "CONTAINER_PORT=8080"
             echo "ASSIGN_PUBLIC_IP=DISABLED"
+            echo "MIGRATION_SUBNET_IDS_JSON=${migration_subnet_ids_json}"
+            echo "MIGRATION_SECURITY_GROUP_IDS_JSON=${migration_security_group_ids_json}"
           } >> "$GITHUB_ENV"
 
       - name: Set up QEMU
@@ -126,10 +182,12 @@ jobs:
       - name: Login to Amazon ECR
         run: |
           set -euo pipefail
-          ecr_registry="${ECR_REPOSITORY_URL%%/*}"
-          echo "::add-mask::${ecr_registry}"
-          aws ecr get-login-password --region "$AWS_REGION" \
-            | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
+          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
+            ecr_registry="${repository_url%%/*}"
+            echo "::add-mask::${ecr_registry}"
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
+          done
 
       - name: Build and push image
         run: |
@@ -143,6 +201,19 @@ jobs:
             .
           echo "ECR image push completed."
 
+      - name: Build and push migration image
+        run: |
+          set -euo pipefail
+          image_uri="${MIGRATION_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          echo "::add-mask::${image_uri}"
+          docker buildx build \
+            --file Dockerfile.migration \
+            --platform "$DOCKER_PLATFORM" \
+            --tag "$image_uri" \
+            --push \
+            .
+          echo "Migration ECR image push completed."
+
       - name: Install ecspresso
         uses: kayac/ecspresso@v2
         with:
@@ -154,7 +225,22 @@ jobs:
           ecspresso --config ecspresso/ecspresso.yml render config >/dev/null
           ecspresso --config ecspresso/ecspresso.yml render task-definition >/dev/null
           ecspresso --config ecspresso/ecspresso.yml render service-definition >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render config >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render task-definition >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render service-definition >/dev/null
           echo "ecspresso render completed."
+
+      - name: Run migration with ecspresso
+        run: |
+          set -euo pipefail
+          export MIGRATION_COMMAND=up
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait --watch-container "$MIGRATION_CONTAINER_NAME"
+
+      - name: Verify migration with ecspresso
+        run: |
+          set -euo pipefail
+          export MIGRATION_COMMAND=verify
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait --watch-container "$MIGRATION_CONTAINER_NAME"
 
       - name: Deploy with ecspresso
         run: |
