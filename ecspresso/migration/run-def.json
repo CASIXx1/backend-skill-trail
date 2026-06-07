@@ -1,0 +1,11 @@
+{
+  "launchType": "FARGATE",
+  "platformVersion": "LATEST",
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": {{ must_env `MIGRATION_SUBNET_IDS_JSON` }},
+      "securityGroups": {{ must_env `MIGRATION_SECURITY_GROUP_IDS_JSON` }},
+      "assignPublicIp": "{{ must_env `MIGRATION_ASSIGN_PUBLIC_IP` }}"
+    }
+  }
+}

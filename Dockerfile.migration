@@ -1,0 +1,18 @@
+FROM golang:1.26 AS builder
+
+WORKDIR /app
+
+ARG TARGETOS
+ARG TARGETARCH
+
+COPY go.mod go.sum ./
+COPY cmd ./cmd
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /migrate ./cmd/migrate
+
+FROM scratch
+
+COPY --from=builder /migrate /migrate
+
+USER 65532:65532
+ENTRYPOINT ["/migrate"]

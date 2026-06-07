@@ -62,6 +62,32 @@ func TestDBHealthHandlerMissingConfig(t *testing.T) {
 	}
 }
 
+func TestUsersTableHandlerMissingConfig(t *testing.T) {
+	t.Setenv("DB_HOST", "")
+	t.Setenv("DB_PORT", "")
+	t.Setenv("DB_USER", "")
+	t.Setenv("DB_PASSWORD", "")
+	t.Setenv("DB_NAME", "")
+
+	req := httptest.NewRequest(http.MethodGet, "/db/users-table", nil)
+	rec := httptest.NewRecorder()
+
+	usersTableHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ng" {
+		t.Fatalf("expected status ng, got %q", body["status"])
+	}
+}
+
 func TestDBConfigFromEnv(t *testing.T) {
 	t.Setenv("DB_HOST", "writer.example.local")
 	t.Setenv("DB_PORT", "5432")
@@ -100,5 +126,19 @@ func TestPostgresDSN(t *testing.T) {
 
 	if !strings.Contains(dsn, "sslmode=require") {
 		t.Fatalf("expected sslmode=require in DSN: %q", dsn)
+	}
+}
+
+func TestUsersTableExistsSQL(t *testing.T) {
+	required := []string{
+		"information_schema.tables",
+		"table_schema = 'public'",
+		"table_name = 'users'",
+	}
+
+	for _, fragment := range required {
+		if !strings.Contains(usersTableExistsSQL, fragment) {
+			t.Fatalf("expected users table SQL to contain %q", fragment)
+		}
 	}
 }

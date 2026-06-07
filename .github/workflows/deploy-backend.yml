@@ -21,33 +21,11 @@ jobs:
       TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
 
     steps:
-      - name: Validate and mask GitHub environment secrets
-        run: |
-          set -euo pipefail
-          for name in AWS_REGION AWS_ROLE_ARN TF_STATE_BUCKET TF_STATE_KEY; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required secret: ${name}" >&2
-              exit 1
-            fi
-            echo "::add-mask::${!name}"
-          done
-
-          aws_account_id="$(awk -F: '{print $5}' <<< "$AWS_ROLE_ARN")"
-          if [[ -n "$aws_account_id" ]]; then
-            echo "::add-mask::${aws_account_id}"
-          fi
-
-          image_tag="${GITHUB_SHA}"
-          docker_platform="linux/arm64"
-          echo "::add-mask::${image_tag}"
-          echo "::add-mask::${docker_platform}"
-          {
-            echo "IMAGE_TAG=${image_tag}"
-            echo "DOCKER_PLATFORM=${docker_platform}"
-          } >> "$GITHUB_ENV"
-
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate and mask GitHub environment secrets
+        run: .github/scripts/init-deploy-env.sh
 
       - name: Assume AWS role with OIDC
         run: |
@@ -88,34 +66,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Load deployment values from Terraform state
-        run: |
-          set -euo pipefail
-          aws s3 cp "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" /tmp/terraform.tfstate >/dev/null
-
-          ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' /tmp/terraform.tfstate)"
-          ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' /tmp/terraform.tfstate)"
-          ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' /tmp/terraform.tfstate)"
-
-          for name in ecr_repository_url ecs_cluster_name ecs_service_name; do
-            if [[ -z "${!name}" ]]; then
-              echo "Missing required Terraform state output: ${name}" >&2
-              exit 1
-            fi
-            echo "::add-mask::${!name}"
-          done
-
-          tfstate_url="s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}"
-          echo "::add-mask::${tfstate_url}"
-
-          {
-            echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
-            echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
-            echo "ECS_SERVICE_NAME=${ecs_service_name}"
-            echo "TFSTATE_URL=${tfstate_url}"
-            echo "CONTAINER_NAME=app"
-            echo "CONTAINER_PORT=8080"
-            echo "ASSIGN_PUBLIC_IP=DISABLED"
-          } >> "$GITHUB_ENV"
+        run: .github/scripts/load-deploy-values.sh
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -126,10 +77,12 @@ jobs:
       - name: Login to Amazon ECR
         run: |
           set -euo pipefail
-          ecr_registry="${ECR_REPOSITORY_URL%%/*}"
-          echo "::add-mask::${ecr_registry}"
-          aws ecr get-login-password --region "$AWS_REGION" \
-            | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
+          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
+            ecr_registry="${repository_url%%/*}"
+            echo "::add-mask::${ecr_registry}"
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
+          done
 
       - name: Build and push image
         run: |
@@ -143,6 +96,19 @@ jobs:
             .
           echo "ECR image push completed."
 
+      - name: Build and push migration image
+        run: |
+          set -euo pipefail
+          image_uri="${MIGRATION_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          echo "::add-mask::${image_uri}"
+          docker buildx build \
+            --file Dockerfile.migration \
+            --platform "$DOCKER_PLATFORM" \
+            --tag "$image_uri" \
+            --push \
+            .
+          echo "Migration ECR image push completed."
+
       - name: Install ecspresso
         uses: kayac/ecspresso@v2
         with:
@@ -154,7 +120,22 @@ jobs:
           ecspresso --config ecspresso/ecspresso.yml render config >/dev/null
           ecspresso --config ecspresso/ecspresso.yml render task-definition >/dev/null
           ecspresso --config ecspresso/ecspresso.yml render service-definition >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render config >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render task-definition >/dev/null
+          ecspresso --config ecspresso/migration/ecspresso.yml render service-definition >/dev/null
           echo "ecspresso render completed."
+
+      - name: Run migration with ecspresso
+        run: |
+          set -euo pipefail
+          export MIGRATION_COMMAND=up
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait
+
+      - name: Verify migration with ecspresso
+        run: |
+          set -euo pipefail
+          export MIGRATION_COMMAND=verify
+          ecspresso --config ecspresso/migration/ecspresso.yml run --wait
 
       - name: Deploy with ecspresso
         run: |

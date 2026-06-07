@@ -49,3 +49,12 @@ jobs:
           platforms: linux/arm64
           push: false
           tags: backend-skill-trail:ci
+
+      - name: Build migration image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.migration
+          platforms: linux/arm64
+          push: false
+          tags: backend-skill-trail-migration:ci

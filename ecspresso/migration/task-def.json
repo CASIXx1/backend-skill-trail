@@ -1,0 +1,61 @@
+{
+  "family": "{{ must_env `MIGRATION_CONTAINER_NAME` }}",
+  "taskRoleArn": "{{ must_env `MIGRATION_TASK_ROLE_ARN` }}",
+  "executionRoleArn": "{{ must_env `MIGRATION_TASK_EXECUTION_ROLE_ARN` }}",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "{{ must_env `MIGRATION_CONTAINER_NAME` }}",
+      "image": "{{ must_env `MIGRATION_ECR_REPOSITORY_URL` }}:{{ must_env `IMAGE_TAG` }}",
+      "essential": true,
+      "command": [
+        "{{ env `MIGRATION_COMMAND` `up` }}"
+      ],
+      "environment": [
+        {
+          "name": "DB_HOST",
+          "value": "{{ tfstate `output.database_writer_endpoint` }}"
+        },
+        {
+          "name": "DB_READER_HOST",
+          "value": "{{ tfstate `output.database_reader_endpoint` }}"
+        },
+        {
+          "name": "DB_PORT",
+          "value": "{{ tfstate `output.database_port` }}"
+        },
+        {
+          "name": "DB_NAME",
+          "value": "{{ tfstate `output.database_name` }}"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DB_USER",
+          "valueFrom": "{{ tfstate `output.database_master_user_secret_arn` }}:username::"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "{{ tfstate `output.database_master_user_secret_arn` }}:password::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "{{ tfstate `output.migration_log_group_name` }}",
+          "awslogs-region": "{{ must_env `AWS_REGION` }}",
+          "awslogs-stream-prefix": "migration"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "{{ env `MIGRATION_TASK_CPU` `256` }}",
+  "memory": "{{ env `MIGRATION_TASK_MEMORY` `512` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  }
+}
