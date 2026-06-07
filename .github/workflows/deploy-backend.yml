@@ -21,11 +21,11 @@ jobs:
       TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
 
     steps:
-      - name: Validate and mask GitHub environment secrets
-        run: .github/scripts/init-deploy-env.sh
-
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate and mask GitHub environment secrets
+        run: .github/scripts/init-deploy-env.sh
 
       - name: Assume AWS role with OIDC
         run: |
