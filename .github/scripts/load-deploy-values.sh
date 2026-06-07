@@ -39,6 +39,24 @@ mask_json_array_values() {
       done
 }
 
+normalize_assign_public_ip() {
+  local value="$1"
+  local normalized
+  normalized="$(printf '%s' "$value" | tr '[:lower:]' '[:upper:]')"
+  case "$normalized" in
+    ENABLED | TRUE | 1 | YES)
+      echo "ENABLED"
+      ;;
+    DISABLED | FALSE | 0 | NO)
+      echo "DISABLED"
+      ;;
+    *)
+      echo "Invalid ASSIGN_PUBLIC_IP value. Use ENABLED or DISABLED." >&2
+      exit 1
+      ;;
+  esac
+}
+
 tfstate_path="/tmp/terraform.tfstate"
 if [[ -n "${TFSTATE_URL:-}" ]]; then
   tfstate_url="$TFSTATE_URL"
@@ -99,6 +117,10 @@ for key in "${migration_env_keys[@]}"; do
   value="$(jq -r --arg key "$key" '.[$key] // empty' <<< "$migration_ecspresso_env")"
   require_value "migration_ecspresso_env.${key}" "$value"
   add_mask "$value"
+  if [[ "$key" == "ASSIGN_PUBLIC_IP" ]]; then
+    value="$(normalize_assign_public_ip "$value")"
+    add_mask "$value"
+  fi
   echo "MIGRATION_${key}=${value}" >> "$GITHUB_ENV"
 done
 
