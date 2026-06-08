@@ -51,19 +51,25 @@
       "logConfiguration": {
         "logDriver": "awsfirelens",
         "options": {
-          "Name": "cloudwatch_logs",
-          "region": "{{ must_env `AWS_REGION` }}",
-          "log_group_name": "{{ tfstate `output.api_log_group_name` }}",
-          "log_stream_prefix": "api/"
-        }
+          "Name": "newrelic"
+        },
+        "secretOptions": [
+          {
+            "name": "apiKey",
+            "valueFrom": "{{ tfstate `output.external_service_secret_arn` }}:NEW_RELIC_LICENSE_KEY::"
+          }
+        ]
       }
     },
     {
       "name": "log_router",
-      "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable",
+      "image": "{{ tfstate `output.new_relic_firelens_image` }}",
       "essential": true,
       "firelensConfiguration": {
-        "type": "fluentbit"
+        "type": "fluentbit",
+        "options": {
+          "enable-ecs-log-metadata": "true"
+        }
       },
       "logConfiguration": {
         "logDriver": "awslogs",
