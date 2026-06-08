@@ -18,6 +18,7 @@ import (
 )
 
 const dbPingTimeout = 3 * time.Second
+const ecsMetadataTimeout = 2 * time.Second
 
 const usersTableExistsSQL = `
 SELECT EXISTS (
@@ -46,6 +47,10 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/db/health", dbHealthHandler)
 	mux.HandleFunc("/db/users-table", usersTableHandler)
+	mux.HandleFunc("/logs/test", logTestHandler)
+	mux.HandleFunc("/logs/status/ok", okLogHandler)
+	mux.HandleFunc("/logs/status/error", errorLogHandler)
+	mux.HandleFunc("/logs/ecs", ecsLogHandler)
 
 	addr := ":" + port
 	server := &http.Server{
@@ -136,6 +141,149 @@ func usersTableHandler(w http.ResponseWriter, r *http.Request) {
 		"table":  "users",
 		"exists": exists,
 	})
+}
+
+func logTestHandler(w http.ResponseWriter, r *http.Request) {
+	testID := time.Now().UTC().Format("20060102T150405.000000000Z")
+	samples := []map[string]any{
+		{
+			"event_type": "new_relic_log_test",
+			"level":      "info",
+			"test_id":    testID,
+			"message":    "plain application log sample",
+		},
+		{
+			"event_type": "new_relic_log_test",
+			"level":      "warn",
+			"test_id":    testID,
+			"message":    "warning log sample",
+			"component":  "api",
+		},
+		{
+			"event_type": "new_relic_log_test",
+			"level":      "error",
+			"test_id":    testID,
+			"message":    "error log sample without sensitive values",
+			"component":  "api",
+		},
+		{
+			"event_type": "new_relic_log_test",
+			"level":      "info",
+			"test_id":    testID,
+			"message":    "structured log sample",
+			"attributes": map[string]any{
+				"feature": "firelens-new-relic",
+				"source":  "manual-test-endpoint",
+			},
+		},
+	}
+
+	for _, sample := range samples {
+		writeLog(sample)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"testID": testID,
+		"count":  len(samples),
+	})
+}
+
+func okLogHandler(w http.ResponseWriter, r *http.Request) {
+	testID := time.Now().UTC().Format("20060102T150405.000000000Z")
+	writeLog(map[string]any{
+		"event_type":  "new_relic_http_log_test",
+		"level":       "info",
+		"test_id":     testID,
+		"status_code": http.StatusOK,
+		"method":      r.Method,
+		"path":        r.URL.Path,
+		"message":     "200 OK log sample",
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"testID": testID,
+	})
+}
+
+func errorLogHandler(w http.ResponseWriter, r *http.Request) {
+	testID := time.Now().UTC().Format("20060102T150405.000000000Z")
+	writeLog(map[string]any{
+		"event_type":  "new_relic_http_log_test",
+		"level":       "error",
+		"test_id":     testID,
+		"status_code": http.StatusInternalServerError,
+		"method":      r.Method,
+		"path":        r.URL.Path,
+		"message":     "500 error log sample",
+		"error":       "intentional test error",
+	})
+
+	writeJSON(w, http.StatusInternalServerError, map[string]any{
+		"status": "ng",
+		"testID": testID,
+		"error":  "intentional test error",
+	})
+}
+
+func ecsLogHandler(w http.ResponseWriter, r *http.Request) {
+	testID := time.Now().UTC().Format("20060102T150405.000000000Z")
+	metadata, metadataAvailable := ecsMetadata(r.Context())
+	writeLog(map[string]any{
+		"event_type":         "new_relic_ecs_log_test",
+		"level":              "info",
+		"test_id":            testID,
+		"message":            "ECS metadata log sample",
+		"metadata_available": metadataAvailable,
+		"metadata":           metadata,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":            "ok",
+		"testID":            testID,
+		"metadataAvailable": metadataAvailable,
+	})
+}
+
+func ecsMetadata(parent context.Context) (map[string]any, bool) {
+	metadataURI := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	if metadataURI == "" {
+		return map[string]any{
+			"reason": "ECS_CONTAINER_METADATA_URI_V4 is not set",
+		}, false
+	}
+
+	ctx, cancel := context.WithTimeout(parent, ecsMetadataTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataURI+"/task", nil)
+	if err != nil {
+		return map[string]any{"error": "failed to build metadata request"}, false
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return map[string]any{"error": "failed to get ECS metadata"}, false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return map[string]any{"status_code": resp.StatusCode}, false
+	}
+
+	var metadata map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return map[string]any{"error": "failed to decode ECS metadata"}, false
+	}
+
+	return metadata, true
+}
+
+func writeLog(fields map[string]any) {
+	if err := json.NewEncoder(os.Stdout).Encode(fields); err != nil {
+		log.Printf("failed to write structured log: %v", err)
+	}
 }
 
 func openDB() (*sql.DB, error) {

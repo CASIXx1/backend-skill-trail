@@ -88,6 +88,108 @@ func TestUsersTableHandlerMissingConfig(t *testing.T) {
 	}
 }
 
+func TestLogTestHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/logs/test", nil)
+	rec := httptest.NewRecorder()
+
+	logTestHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ok" {
+		t.Fatalf("expected status ok, got %q", body["status"])
+	}
+
+	if body["testID"] == "" {
+		t.Fatal("expected testID")
+	}
+
+	if body["count"] != float64(4) {
+		t.Fatalf("expected count 4, got %v", body["count"])
+	}
+}
+
+func TestOKLogHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/logs/status/ok", nil)
+	rec := httptest.NewRecorder()
+
+	okLogHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ok" {
+		t.Fatalf("expected status ok, got %q", body["status"])
+	}
+
+	if body["testID"] == "" {
+		t.Fatal("expected testID")
+	}
+}
+
+func TestErrorLogHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/logs/status/error", nil)
+	rec := httptest.NewRecorder()
+
+	errorLogHandler(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ng" {
+		t.Fatalf("expected status ng, got %q", body["status"])
+	}
+
+	if body["testID"] == "" {
+		t.Fatal("expected testID")
+	}
+}
+
+func TestECSLogHandlerWithoutMetadataEndpoint(t *testing.T) {
+	t.Setenv("ECS_CONTAINER_METADATA_URI_V4", "")
+
+	req := httptest.NewRequest(http.MethodGet, "/logs/ecs", nil)
+	rec := httptest.NewRecorder()
+
+	ecsLogHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ok" {
+		t.Fatalf("expected status ok, got %q", body["status"])
+	}
+
+	if body["metadataAvailable"] != false {
+		t.Fatalf("expected metadataAvailable false, got %v", body["metadataAvailable"])
+	}
+}
+
 func TestDBConfigFromEnv(t *testing.T) {
 	t.Setenv("DB_HOST", "writer.example.local")
 	t.Setenv("DB_PORT", "5432")
