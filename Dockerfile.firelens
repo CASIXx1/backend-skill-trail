@@ -1,7 +1,0 @@
-ARG NEW_RELIC_FIRELENS_IMAGE=newrelic/newrelic-fluentbit-output:latest
-FROM ${NEW_RELIC_FIRELENS_IMAGE}
-
-COPY ecspresso/firelens/fluent-bit.conf /fluent-bit/etc/fluent-bit-custom.conf
-
-ENTRYPOINT ["/fluent-bit/bin/fluent-bit", "-e", "/fluent-bit/bin/out_newrelic.so"]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]

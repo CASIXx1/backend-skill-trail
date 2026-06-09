@@ -44,7 +44,7 @@ jobs:
       - name: Login to Amazon ECR
         run: |
           set -euo pipefail
-          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL" "$FIRELENS_ECR_REPOSITORY_URL"; do
+          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
             ecr_registry="${repository_url%%/*}"
             echo "::add-mask::${ecr_registry}"
             aws ecr get-login-password --region "$AWS_REGION" \
@@ -75,20 +75,6 @@ jobs:
             --push \
             .
           echo "Migration ECR image push completed."
-
-      - name: Build and push FireLens image
-        run: |
-          set -euo pipefail
-          image_uri="${FIRELENS_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
-          echo "::add-mask::${image_uri}"
-          docker buildx build \
-            --file Dockerfile.firelens \
-            --build-arg "NEW_RELIC_FIRELENS_IMAGE=${NEW_RELIC_FIRELENS_IMAGE}" \
-            --platform "$DOCKER_PLATFORM" \
-            --tag "$image_uri" \
-            --push \
-            .
-          echo "FireLens ECR image push completed."
 
       - name: Install ecspresso
         uses: kayac/ecspresso@v2
