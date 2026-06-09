@@ -72,7 +72,7 @@
       ],
       "secrets": [
         {
-          "name": "NEW_RELIC_API_KEY",
+          "name": "NEW_RELIC_LICENSE_KEY",
           "valueFrom": "{{ tfstate `output.external_service_secret_arn` }}:NEW_RELIC_LICENSE_KEY::"
         }
       ],
