@@ -49,26 +49,39 @@
         }
       ],
       "logConfiguration": {
-        "logDriver": "awsfirelens",
-        "options": {
-          "Name": "newrelic"
-        },
-        "secretOptions": [
-          {
-            "name": "apiKey",
-            "valueFrom": "{{ tfstate `output.external_service_secret_arn` }}:NEW_RELIC_LICENSE_KEY::"
-          }
-        ]
+        "logDriver": "awsfirelens"
       }
     },
     {
       "name": "log_router",
-      "image": "{{ tfstate `output.new_relic_firelens_image` }}",
+      "image": "{{ tfstate `output.firelens_ecr_repository_url` }}:{{ must_env `IMAGE_TAG` }}",
       "essential": true,
+      "environment": [
+        {
+          "name": "AWS_REGION",
+          "value": "{{ must_env `AWS_REGION` }}"
+        },
+        {
+          "name": "CLOUDWATCH_LOG_GROUP",
+          "value": "{{ tfstate `output.api_log_group_name` }}"
+        },
+        {
+          "name": "NEW_RELIC_LOG_ENDPOINT",
+          "value": "{{ tfstate `output.new_relic_log_endpoint` }}"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "NEW_RELIC_API_KEY",
+          "valueFrom": "{{ tfstate `output.external_service_secret_arn` }}:NEW_RELIC_LICENSE_KEY::"
+        }
+      ],
       "firelensConfiguration": {
         "type": "fluentbit",
         "options": {
-          "enable-ecs-log-metadata": "true"
+          "enable-ecs-log-metadata": "true",
+          "config-file-type": "file",
+          "config-file-value": "/fluent-bit/etc/fluent-bit-custom.conf"
         }
       },
       "logConfiguration": {

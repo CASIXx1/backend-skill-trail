@@ -1,0 +1,4 @@
+ARG NEW_RELIC_FIRELENS_IMAGE=533243300146.dkr.ecr.ap-northeast-1.amazonaws.com/newrelic/logging-firelens-fluentbit:1.17.1
+FROM ${NEW_RELIC_FIRELENS_IMAGE}
+
+COPY ecspresso/firelens/fluent-bit.conf /fluent-bit/etc/fluent-bit-custom.conf

@@ -2,11 +2,6 @@ name: Log Test
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - Deploy Backend
-    types:
-      - completed
 
 permissions:
   contents: read
@@ -14,7 +9,6 @@ permissions:
 
 jobs:
   run-log-test:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: dev
     env:

@@ -7,6 +7,7 @@ on:
       - '**'
 
 permissions:
+  actions: write
   contents: read
   id-token: write
 
@@ -44,12 +45,16 @@ jobs:
       - name: Login to Amazon ECR
         run: |
           set -euo pipefail
-          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
+          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL" "$FIRELENS_ECR_REPOSITORY_URL"; do
             ecr_registry="${repository_url%%/*}"
             echo "::add-mask::${ecr_registry}"
             aws ecr get-login-password --region "$AWS_REGION" \
               | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
           done
+          new_relic_firelens_registry="${NEW_RELIC_FIRELENS_IMAGE%%/*}"
+          echo "::add-mask::${new_relic_firelens_registry}"
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$new_relic_firelens_registry" >/dev/null
 
       - name: Build and push image
         run: |
@@ -75,6 +80,20 @@ jobs:
             --push \
             .
           echo "Migration ECR image push completed."
+
+      - name: Build and push FireLens image
+        run: |
+          set -euo pipefail
+          image_uri="${FIRELENS_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          echo "::add-mask::${image_uri}"
+          docker buildx build \
+            --file Dockerfile.firelens \
+            --build-arg "NEW_RELIC_FIRELENS_IMAGE=${NEW_RELIC_FIRELENS_IMAGE}" \
+            --platform "$DOCKER_PLATFORM" \
+            --tag "$image_uri" \
+            --push \
+            .
+          echo "FireLens ECR image push completed."
 
       - name: Install ecspresso
         uses: kayac/ecspresso@v2
@@ -108,3 +127,10 @@ jobs:
         run: |
           set -euo pipefail
           ecspresso --config ecspresso/ecspresso.yml deploy
+
+      - name: Trigger log test workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run log-test.yml --ref "$GITHUB_REF_NAME"
