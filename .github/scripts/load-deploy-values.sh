@@ -93,7 +93,9 @@ sensitive_output_names=(
   database_port
   database_reader_endpoint
   database_writer_endpoint
+  external_service_secret_arn
   migration_log_group_name
+  new_relic_firelens_image
 )
 
 for output_name in "${sensitive_output_names[@]}"; do

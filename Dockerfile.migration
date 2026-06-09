@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM golang:1.26 AS builder
 
 WORKDIR /app
@@ -6,9 +8,18 @@ ARG TARGETOS
 ARG TARGETARCH
 
 COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    for attempt in 1 2 3; do \
+      go mod download && break; \
+      if [ "$attempt" = "3" ]; then exit 1; fi; \
+      sleep 5; \
+    done
+
 COPY cmd ./cmd
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /migrate ./cmd/migrate
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /migrate ./cmd/migrate
 
 FROM scratch
 
