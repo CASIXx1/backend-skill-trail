@@ -51,10 +51,6 @@ jobs:
             aws ecr get-login-password --region "$AWS_REGION" \
               | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null
           done
-          new_relic_firelens_registry="${NEW_RELIC_FIRELENS_IMAGE%%/*}"
-          echo "::add-mask::${new_relic_firelens_registry}"
-          aws ecr get-login-password --region "$AWS_REGION" \
-            | docker login --username AWS --password-stdin "$new_relic_firelens_registry" >/dev/null
 
       - name: Build and push image
         run: |

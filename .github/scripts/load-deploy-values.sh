@@ -71,6 +71,10 @@ ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' "$t
 migration_ecr_repository_url="$(jq -r '.outputs.migration_ecr_repository_url.value // empty' "$tfstate_path")"
 firelens_ecr_repository_url="$(jq -r '.outputs.firelens_ecr_repository_url.value // empty' "$tfstate_path")"
 new_relic_firelens_image="$(jq -r '.outputs.new_relic_firelens_image.value // empty' "$tfstate_path")"
+firelens_base_image="newrelic/newrelic-fluentbit-output:latest"
+if [[ -n "$new_relic_firelens_image" && "$new_relic_firelens_image" != *".dkr.ecr."* ]]; then
+  firelens_base_image="$new_relic_firelens_image"
+fi
 ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' "$tfstate_path")"
 ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' "$tfstate_path")"
 migration_ecspresso_env="$(jq -c '.outputs.migration_ecspresso_env.value // empty' "$tfstate_path")"
@@ -79,7 +83,7 @@ required_outputs=(
   ecr_repository_url
   migration_ecr_repository_url
   firelens_ecr_repository_url
-  new_relic_firelens_image
+  firelens_base_image
   ecs_cluster_name
   ecs_service_name
   migration_ecspresso_env
@@ -146,7 +150,7 @@ add_mask "$tfstate_url"
   echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
   echo "MIGRATION_ECR_REPOSITORY_URL=${migration_ecr_repository_url}"
   echo "FIRELENS_ECR_REPOSITORY_URL=${firelens_ecr_repository_url}"
-  echo "NEW_RELIC_FIRELENS_IMAGE=${new_relic_firelens_image}"
+  echo "NEW_RELIC_FIRELENS_IMAGE=${firelens_base_image}"
   echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
   echo "ECS_SERVICE_NAME=${ecs_service_name}"
   echo "TFSTATE_URL=${tfstate_url}"

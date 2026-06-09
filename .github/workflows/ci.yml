@@ -49,6 +49,8 @@ jobs:
           platforms: linux/arm64
           push: false
           tags: backend-skill-trail:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
       - name: Build migration image
         uses: docker/build-push-action@v6
@@ -58,3 +60,5 @@ jobs:
           platforms: linux/arm64
           push: false
           tags: backend-skill-trail-migration:ci
+          cache-from: type=gha,scope=migration
+          cache-to: type=gha,mode=max,scope=migration
