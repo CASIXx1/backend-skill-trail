@@ -7,7 +7,6 @@ on:
       - '**'
 
 permissions:
-  actions: write
   contents: read
   id-token: write
 
@@ -124,9 +123,10 @@ jobs:
           set -euo pipefail
           ecspresso --config ecspresso/ecspresso.yml deploy
 
-      - name: Trigger log test workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run log-test.yml --ref "$GITHUB_REF_NAME"
+  log-test:
+    needs: deploy
+    uses: ./.github/workflows/log-test.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
