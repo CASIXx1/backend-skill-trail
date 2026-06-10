@@ -322,6 +322,11 @@ func dbConfigFromEnv() (dbConfig, error) {
 }
 
 func postgresDSN(cfg dbConfig) string {
+	sslmode := os.Getenv("DB_SSLMODE")
+	if sslmode == "" {
+		sslmode = "require"
+	}
+
 	dsn := &url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cfg.User, cfg.Password),
@@ -330,7 +335,7 @@ func postgresDSN(cfg dbConfig) string {
 	}
 
 	query := dsn.Query()
-	query.Set("sslmode", "require")
+	query.Set("sslmode", sslmode)
 	dsn.RawQuery = query.Encode()
 
 	return dsn.String()

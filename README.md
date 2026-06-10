@@ -206,3 +206,33 @@ aws logs describe-log-streams --log-group-name /ecs/infra-skill-trail-dev/api --
 
 - https://docs.aws.amazon.com/AmazonECS/latest/developerguide/firelens-taskdef.html
 - https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_firelens.html
+
+
+## ローカル開発環境
+
+Dockerを使用して、Go本体のインストールなしで開発が可能です。
+
+### 起動方法
+
+```bash
+docker compose up -d
+```
+
+これにより、以下のサービスが起動します：
+- アプリケーション (http://localhost:8080)
+- PostgreSQL (localhost:5432)
+- Redis (localhost:6379)
+
+### マイグレーションの実行
+
+```bash
+docker compose run --rm migrate
+```
+
+### 動作確認
+
+```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/db/health
+curl http://localhost:8080/cache/health
+```
