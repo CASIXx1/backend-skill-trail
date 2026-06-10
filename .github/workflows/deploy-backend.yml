@@ -116,3 +116,11 @@ jobs:
     permissions:
       contents: read
       id-token: write
+
+  cache-test:
+    needs: deploy
+    uses: ./.github/workflows/cache-test.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

@@ -7,6 +7,7 @@
 # Go
 bin/
 dist/
+vendor/
 *.test
 *.out
 coverage.*

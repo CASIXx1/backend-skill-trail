@@ -44,6 +44,33 @@ wait_for_alb() {
 
 wait_for_alb
 
+wait_for_cache() {
+  local max_attempts=12
+  local attempt=1
+  echo "Waiting for Cache to be ready: ${base_url}/cache/health"
+  while [[ $attempt -le $max_attempts ]]; do
+    local response_file
+    local status
+    response_file="$(mktemp)"
+    status="$(curl -sS -o "$response_file" -w '%{http_code}' "${base_url}/cache/health")"
+    if [[ "$status" == "200" ]]; then
+      echo "Cache is ready!"
+      rm -f "$response_file"
+      return 0
+    fi
+    echo "Attempt $attempt/$max_attempts: Cache not ready yet (status=$status), waiting..."
+    cat "$response_file" >&2
+    echo >&2
+    rm -f "$response_file"
+    sleep 10
+    attempt=$((attempt + 1))
+  done
+  echo "Cache did not become ready in time" >&2
+  exit 1
+}
+
+wait_for_cache
+
 call_endpoint() {
   local method="$1"
   local path="$2"
@@ -61,17 +88,14 @@ call_endpoint() {
     exit 1
   fi
 
-  test_id="$(jq -r '.testID // empty' "$response_file")"
-  if [[ -n "$test_id" ]]; then
-    echo "Log test endpoint completed: path=${path} status=${status} test_id=${test_id}"
-  else
-    echo "Log test endpoint completed: path=${path} status=${status}"
-  fi
+  echo "Cache test endpoint completed: path=${path} status=${status}"
+  cat "$response_file"
+  echo
 
   rm -f "$response_file"
 }
 
-call_endpoint "POST" "/logs/test" "200"
-call_endpoint "GET" "/logs/status/ok" "200"
-call_endpoint "GET" "/logs/status/error" "500"
-call_endpoint "GET" "/logs/ecs" "200"
+call_endpoint "GET" "/cache/health" "200"
+call_endpoint "GET" "/cache/set?key=test-key&value=test-value" "200"
+call_endpoint "GET" "/cache/list" "200"
+call_endpoint "GET" "/cache/session" "200"

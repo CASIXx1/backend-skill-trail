@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 const dbPingTimeout = 3 * time.Second
@@ -47,6 +49,10 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/db/health", dbHealthHandler)
 	mux.HandleFunc("/db/users-table", usersTableHandler)
+	mux.HandleFunc("/cache/health", cacheHealthHandler)
+	mux.HandleFunc("/cache/set", cacheSetHandler)
+	mux.HandleFunc("/cache/list", cacheListHandler)
+	mux.HandleFunc("/cache/session", cacheSessionHandler)
 	mux.HandleFunc("/logs/test", logTestHandler)
 	mux.HandleFunc("/logs/status/ok", okLogHandler)
 	mux.HandleFunc("/logs/status/error", errorLogHandler)
@@ -317,6 +323,11 @@ func dbConfigFromEnv() (dbConfig, error) {
 }
 
 func postgresDSN(cfg dbConfig) string {
+	sslmode := os.Getenv("DB_SSLMODE")
+	if sslmode == "" {
+		sslmode = "require"
+	}
+
 	dsn := &url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cfg.User, cfg.Password),
@@ -325,10 +336,196 @@ func postgresDSN(cfg dbConfig) string {
 	}
 
 	query := dsn.Query()
-	query.Set("sslmode", "require")
+	query.Set("sslmode", sslmode)
 	dsn.RawQuery = query.Encode()
 
 	return dsn.String()
+}
+
+func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "ng",
+			"error":  err.Error(),
+		})
+		return
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		host := os.Getenv("CACHE_HOST")
+		port := os.Getenv("CACHE_PORT")
+		tlsEnabled := os.Getenv("CACHE_TLS_ENABLED") == "true"
+		log.Printf("Ping failed: %v", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "ng",
+			"error":  fmt.Sprintf("failed to ping cache: %v (host=%s, port=%s, tls=%v). check logs for dial details.", err, host, port, tlsEnabled),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+	})
+}
+
+func cacheSetHandler(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	val := r.URL.Query().Get("value")
+	if key == "" || val == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "key and value are required"})
+		return
+	}
+
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	if err := client.Set(ctx, key, val, 10*time.Minute).Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":     "info",
+		"message":   "cache set",
+		"cache_key": key,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "key": key, "value": val})
+}
+
+func cacheListHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	keys, err := client.Keys(ctx, "*").Result()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":      "info",
+		"message":    "cache list",
+		"keys_count": len(keys),
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "keys": keys})
+}
+
+func cacheSessionHandler(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("sess_%d", time.Now().UnixNano())
+	}
+
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	sessionData := map[string]any{
+		"user_id":    123,
+		"last_login": time.Now().Format(time.RFC3339),
+	}
+
+	data, _ := json.Marshal(sessionData)
+	if err := client.Set(ctx, sessionID, data, 30*time.Minute).Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":      "info",
+		"message":    "session saved",
+		"session_id": sessionID,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"session_id": sessionID,
+		"data":       sessionData,
+	})
+}
+
+func openCache() (*redis.Client, error) {
+	host := os.Getenv("CACHE_HOST")
+	port := os.Getenv("CACHE_PORT")
+	password := os.Getenv("CACHE_AUTH_TOKEN")
+	tlsEnabled := os.Getenv("CACHE_TLS_ENABLED") == "true"
+
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("cache configuration is missing")
+	}
+
+	addr := net.JoinHostPort(host, port)
+	opts := &redis.Options{
+		Addr:     addr,
+		Password: password,
+		DB:       0,
+		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			log.Printf("Dialing cache: %s %s", network, addr)
+			d := net.Dialer{
+				Timeout: 5 * time.Second,
+			}
+
+			// 1. Resolve
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				log.Printf("DNS lookup failed for %s: %v", host, err)
+			} else {
+				log.Printf("DNS lookup success for %s: %v", host, ips)
+			}
+
+			// 2. Dial
+			conn, err := d.DialContext(ctx, network, addr)
+			if err != nil {
+				log.Printf("TCP Dial failed for %s: %v", addr, err)
+				return nil, err
+			}
+			log.Printf("TCP Dial success for %s", addr)
+
+			// 3. TLS
+			if tlsEnabled {
+				log.Printf("Starting TLS handshake for %s", addr)
+				tlsConn := tls.Client(conn, &tls.Config{
+					InsecureSkipVerify: true,
+					ServerName:         host,
+				})
+				if err := tlsConn.HandshakeContext(ctx); err != nil {
+					log.Printf("TLS handshake failed for %s: %v", addr, err)
+					conn.Close()
+					return nil, err
+				}
+				log.Printf("TLS handshake success for %s", addr)
+				return tlsConn, nil
+			}
+
+			return conn, nil
+		},
+	}
+
+	return redis.NewClient(opts), nil
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, body map[string]any) {
