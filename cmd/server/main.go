@@ -357,9 +357,13 @@ func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		host := os.Getenv("CACHE_HOST")
+		port := os.Getenv("CACHE_PORT")
+		tlsEnabled := os.Getenv("CACHE_TLS_ENABLED") == "true"
+		log.Printf("Ping failed: %v", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
-			"error":  fmt.Sprintf("failed to ping cache: %v", err),
+			"error":  fmt.Sprintf("failed to ping cache: %v (host=%s, port=%s, tls=%v). check logs for dial details.", err, host, port, tlsEnabled),
 		})
 		return
 	}
@@ -474,16 +478,51 @@ func openCache() (*redis.Client, error) {
 		return nil, fmt.Errorf("cache configuration is missing")
 	}
 
+	addr := net.JoinHostPort(host, port)
 	opts := &redis.Options{
-		Addr:     net.JoinHostPort(host, port),
+		Addr:     addr,
 		Password: password,
 		DB:       0,
-	}
+		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			log.Printf("Dialing cache: %s %s", network, addr)
+			d := net.Dialer{
+				Timeout: 5 * time.Second,
+			}
 
-	if tlsEnabled {
-		opts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: true, // ElastiCache endpoints might use internal certs
-		}
+			// 1. Resolve
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				log.Printf("DNS lookup failed for %s: %v", host, err)
+			} else {
+				log.Printf("DNS lookup success for %s: %v", host, ips)
+			}
+
+			// 2. Dial
+			conn, err := d.DialContext(ctx, network, addr)
+			if err != nil {
+				log.Printf("TCP Dial failed for %s: %v", addr, err)
+				return nil, err
+			}
+			log.Printf("TCP Dial success for %s", addr)
+
+			// 3. TLS
+			if tlsEnabled {
+				log.Printf("Starting TLS handshake for %s", addr)
+				tlsConn := tls.Client(conn, &tls.Config{
+					InsecureSkipVerify: true,
+					ServerName:         host,
+				})
+				if err := tlsConn.HandshakeContext(ctx); err != nil {
+					log.Printf("TLS handshake failed for %s: %v", addr, err)
+					conn.Close()
+					return nil, err
+				}
+				log.Printf("TLS handshake success for %s", addr)
+				return tlsConn, nil
+			}
+
+			return conn, nil
+		},
 	}
 
 	return redis.NewClient(opts), nil

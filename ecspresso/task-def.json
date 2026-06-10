@@ -47,7 +47,7 @@
         },
         {
           "name": "CACHE_TLS_ENABLED",
-          "value": "{{ env `CACHE_TLS_ENABLED` `false` }}"
+          "value": "{{ env `CACHE_TLS_ENABLED` `true` }}"
         }
       ],
       "secrets": [

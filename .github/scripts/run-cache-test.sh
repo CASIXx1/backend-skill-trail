@@ -44,6 +44,33 @@ wait_for_alb() {
 
 wait_for_alb
 
+wait_for_cache() {
+  local max_attempts=12
+  local attempt=1
+  echo "Waiting for Cache to be ready: ${base_url}/cache/health"
+  while [[ $attempt -le $max_attempts ]]; do
+    local response_file
+    local status
+    response_file="$(mktemp)"
+    status="$(curl -sS -o "$response_file" -w '%{http_code}' "${base_url}/cache/health")"
+    if [[ "$status" == "200" ]]; then
+      echo "Cache is ready!"
+      rm -f "$response_file"
+      return 0
+    fi
+    echo "Attempt $attempt/$max_attempts: Cache not ready yet (status=$status), waiting..."
+    cat "$response_file" >&2
+    echo >&2
+    rm -f "$response_file"
+    sleep 10
+    attempt=$((attempt + 1))
+  done
+  echo "Cache did not become ready in time" >&2
+  exit 1
+}
+
+wait_for_cache
+
 call_endpoint() {
   local method="$1"
   local path="$2"
