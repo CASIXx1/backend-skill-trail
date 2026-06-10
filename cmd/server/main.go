@@ -15,6 +15,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 const dbPingTimeout = 3 * time.Second
@@ -47,6 +48,10 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/db/health", dbHealthHandler)
 	mux.HandleFunc("/db/users-table", usersTableHandler)
+	mux.HandleFunc("/cache/health", cacheHealthHandler)
+	mux.HandleFunc("/cache/set", cacheSetHandler)
+	mux.HandleFunc("/cache/list", cacheListHandler)
+	mux.HandleFunc("/cache/session", cacheSessionHandler)
 	mux.HandleFunc("/logs/test", logTestHandler)
 	mux.HandleFunc("/logs/status/ok", okLogHandler)
 	mux.HandleFunc("/logs/status/error", errorLogHandler)
@@ -329,6 +334,144 @@ func postgresDSN(cfg dbConfig) string {
 	dsn.RawQuery = query.Encode()
 
 	return dsn.String()
+}
+
+func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "ng",
+			"error":  err.Error(),
+		})
+		return
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "ng",
+			"error":  fmt.Sprintf("failed to ping cache: %v", err),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+	})
+}
+
+func cacheSetHandler(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	val := r.URL.Query().Get("value")
+	if key == "" || val == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "key and value are required"})
+		return
+	}
+
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	if err := client.Set(ctx, key, val, 10*time.Minute).Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":     "info",
+		"message":   "cache set",
+		"cache_key": key,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "key": key, "value": val})
+}
+
+func cacheListHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	keys, err := client.Keys(ctx, "*").Result()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":      "info",
+		"message":    "cache list",
+		"keys_count": len(keys),
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "keys": keys})
+}
+
+func cacheSessionHandler(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("sess_%d", time.Now().UnixNano())
+	}
+
+	client, err := openCache()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx := r.Context()
+	sessionData := map[string]any{
+		"user_id":    123,
+		"last_login": time.Now().Format(time.RFC3339),
+	}
+
+	data, _ := json.Marshal(sessionData)
+	if err := client.Set(ctx, sessionID, data, 30*time.Minute).Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeLog(map[string]any{
+		"level":      "info",
+		"message":    "session saved",
+		"session_id": sessionID,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"session_id": sessionID,
+		"data":       sessionData,
+	})
+}
+
+func openCache() (*redis.Client, error) {
+	host := os.Getenv("CACHE_HOST")
+	port := os.Getenv("CACHE_PORT")
+	password := os.Getenv("CACHE_AUTH_TOKEN")
+
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("cache configuration is missing")
+	}
+
+	return redis.NewClient(&redis.Options{
+		Addr:     net.JoinHostPort(host, port),
+		Password: password,
+		DB:       0,
+	}), nil
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, body map[string]any) {

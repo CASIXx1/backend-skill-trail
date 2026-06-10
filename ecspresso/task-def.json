@@ -36,6 +36,14 @@
         {
           "name": "DB_NAME",
           "value": "{{ tfstate `output.database_name` }}"
+        },
+        {
+          "name": "CACHE_HOST",
+          "value": "{{ tfstate `output.cache_primary_endpoint` }}"
+        },
+        {
+          "name": "CACHE_PORT",
+          "value": "{{ tfstate `output.cache_port` }}"
         }
       ],
       "secrets": [
@@ -46,6 +54,10 @@
         {
           "name": "DB_PASSWORD",
           "valueFrom": "{{ tfstate `output.database_master_user_secret_arn` }}:password::"
+        },
+        {
+          "name": "CACHE_AUTH_TOKEN",
+          "valueFrom": "{{ tfstate `output.cache_auth_token_secret_arn` }}:AUTH_TOKEN::"
         }
       ],
       "logConfiguration": {
