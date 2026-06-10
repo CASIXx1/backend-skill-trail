@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	_ "github.com/lib/pq"
 )
 
@@ -467,16 +467,25 @@ func openCache() (*redis.Client, error) {
 	host := os.Getenv("CACHE_HOST")
 	port := os.Getenv("CACHE_PORT")
 	password := os.Getenv("CACHE_AUTH_TOKEN")
+	tlsEnabled := os.Getenv("CACHE_TLS_ENABLED") == "true"
 
 	if host == "" || port == "" {
 		return nil, fmt.Errorf("cache configuration is missing")
 	}
 
-	return redis.NewClient(&redis.Options{
+	opts := &redis.Options{
 		Addr:     net.JoinHostPort(host, port),
 		Password: password,
 		DB:       0,
-	}), nil
+	}
+
+	if tlsEnabled {
+		opts.TLSConfig = &tls.Config{
+			InsecureSkipVerify: true, // ElastiCache endpoints might use internal certs
+		}
+	}
+
+	return redis.NewClient(opts), nil
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, body map[string]any) {
