@@ -25,6 +25,25 @@ echo "::add-mask::${alb_dns_name}"
 base_url="http://${alb_dns_name}"
 echo "::add-mask::${base_url}"
 
+wait_for_alb() {
+  local max_attempts=30
+  local attempt=1
+  echo "Waiting for ALB to be ready: ${base_url}/health"
+  while [[ $attempt -le $max_attempts ]]; do
+    if curl -sS -o /dev/null --connect-timeout 5 "${base_url}/health"; then
+      echo "ALB is ready!"
+      return 0
+    fi
+    echo "Attempt $attempt/$max_attempts: ALB not ready yet, waiting..."
+    sleep 10
+    attempt=$((attempt + 1))
+  done
+  echo "ALB did not become ready in time" >&2
+  exit 1
+}
+
+wait_for_alb
+
 call_endpoint() {
   local method="$1"
   local path="$2"

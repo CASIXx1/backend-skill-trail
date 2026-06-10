@@ -7,10 +7,10 @@
 # Go
 bin/
 dist/
+vendor/
 *.test
 *.out
 coverage.*
-vendor/
 
 # Local build artifacts
 tmp/

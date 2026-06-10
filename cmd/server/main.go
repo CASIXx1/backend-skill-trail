@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
+	_ "github.com/lib/pq"
 )
 
 const dbPingTimeout = 3 * time.Second
@@ -352,7 +352,7 @@ func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {

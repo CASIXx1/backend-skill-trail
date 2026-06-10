@@ -9,11 +9,7 @@ ARG TARGETARCH
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
-    for attempt in 1 2 3; do \
-      go mod download && break; \
-      if [ "$attempt" = "3" ]; then exit 1; fi; \
-      sleep 5; \
-    done
+    go mod download
 
 COPY cmd ./cmd
 
