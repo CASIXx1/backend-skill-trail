@@ -39,20 +39,44 @@ type dbConfig struct {
 	Name     string
 }
 
+type server struct {
+	db    *sql.DB
+	cache *redis.Client
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	db, err := openDB()
+	if err != nil {
+		log.Printf("warning: database connection failed: %v", err)
+	} else {
+		defer db.Close()
+	}
+
+	cache, err := openCache()
+	if err != nil {
+		log.Printf("warning: cache connection failed: %v", err)
+	} else {
+		defer cache.Close()
+	}
+
+	s := &server{
+		db:    db,
+		cache: cache,
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/db/health", dbHealthHandler)
-	mux.HandleFunc("/db/users-table", usersTableHandler)
-	mux.HandleFunc("/cache/health", cacheHealthHandler)
-	mux.HandleFunc("/cache/set", cacheSetHandler)
-	mux.HandleFunc("/cache/list", cacheListHandler)
-	mux.HandleFunc("/cache/session", cacheSessionHandler)
+	mux.HandleFunc("/db/health", s.dbHealthHandler)
+	mux.HandleFunc("/db/users-table", s.usersTableHandler)
+	mux.HandleFunc("/cache/health", s.cacheHealthHandler)
+	mux.HandleFunc("/cache/set", s.cacheSetHandler)
+	mux.HandleFunc("/cache/list", s.cacheListHandler)
+	mux.HandleFunc("/cache/session", s.cacheSessionHandler)
 	mux.HandleFunc("/logs/test", logTestHandler)
 	mux.HandleFunc("/logs/status/ok", okLogHandler)
 	mux.HandleFunc("/logs/status/error", errorLogHandler)
@@ -94,21 +118,19 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func dbHealthHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := openDB()
-	if err != nil {
+func (s *server) dbHealthHandler(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
-			"error":  "database configuration is missing",
+			"error":  "database connection is not initialized",
 		})
 		return
 	}
-	defer db.Close()
 
 	ctx, cancel := context.WithTimeout(r.Context(), dbPingTimeout)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
+	if err := s.db.PingContext(ctx); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
 			"error":  "database ping failed",
@@ -119,22 +141,20 @@ func dbHealthHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func usersTableHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := openDB()
-	if err != nil {
+func (s *server) usersTableHandler(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
-			"error":  "database configuration is missing",
+			"error":  "database connection is not initialized",
 		})
 		return
 	}
-	defer db.Close()
 
 	ctx, cancel := context.WithTimeout(r.Context(), dbPingTimeout)
 	defer cancel()
 
 	var exists bool
-	if err := db.QueryRowContext(ctx, usersTableExistsSQL).Scan(&exists); err != nil {
+	if err := s.db.QueryRowContext(ctx, usersTableExistsSQL).Scan(&exists); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
 			"error":  "users table check failed",
@@ -342,21 +362,19 @@ func postgresDSN(cfg dbConfig) string {
 	return dsn.String()
 }
 
-func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
-	client, err := openCache()
-	if err != nil {
+func (s *server) cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
+	if s.cache == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "ng",
-			"error":  err.Error(),
+			"error":  "cache connection is not initialized",
 		})
 		return
 	}
-	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	if err := client.Ping(ctx).Err(); err != nil {
+	if err := s.cache.Ping(ctx).Err(); err != nil {
 		host := os.Getenv("CACHE_HOST")
 		port := os.Getenv("CACHE_PORT")
 		tlsEnabled := os.Getenv("CACHE_TLS_ENABLED") == "true"
@@ -373,7 +391,7 @@ func cacheHealthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func cacheSetHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) cacheSetHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	val := r.URL.Query().Get("value")
 	if key == "" || val == "" {
@@ -381,15 +399,13 @@ func cacheSetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := openCache()
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+	if s.cache == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "cache connection is not initialized"})
 		return
 	}
-	defer client.Close()
 
 	ctx := r.Context()
-	if err := client.Set(ctx, key, val, 10*time.Minute).Err(); err != nil {
+	if err := s.cache.Set(ctx, key, val, 10*time.Minute).Err(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
@@ -404,16 +420,14 @@ func cacheSetHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "key": key, "value": val})
 }
 
-func cacheListHandler(w http.ResponseWriter, r *http.Request) {
-	client, err := openCache()
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+func (s *server) cacheListHandler(w http.ResponseWriter, r *http.Request) {
+	if s.cache == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "cache connection is not initialized"})
 		return
 	}
-	defer client.Close()
 
 	ctx := r.Context()
-	keys, err := client.Keys(ctx, "*").Result()
+	keys, err := s.cache.Keys(ctx, "*").Result()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -429,18 +443,16 @@ func cacheListHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "keys": keys})
 }
 
-func cacheSessionHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) cacheSessionHandler(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session_id")
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("sess_%d", time.Now().UnixNano())
 	}
 
-	client, err := openCache()
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+	if s.cache == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "cache connection is not initialized"})
 		return
 	}
-	defer client.Close()
 
 	ctx := r.Context()
 	sessionData := map[string]any{
@@ -449,7 +461,7 @@ func cacheSessionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(sessionData)
-	if err := client.Set(ctx, sessionID, data, 30*time.Minute).Err(); err != nil {
+	if err := s.cache.Set(ctx, sessionID, data, 30*time.Minute).Err(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
