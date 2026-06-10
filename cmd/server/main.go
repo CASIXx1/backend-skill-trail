@@ -16,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 const dbPingTimeout = 3 * time.Second
