@@ -135,11 +135,11 @@ jobs:
           ecspresso --config ecspresso/ecspresso.yml deploy
           ecspresso --config ecspresso/worker/ecspresso.yml deploy
           ecspresso --config ecspresso/scheduled-log/ecspresso.yml render task-definition \
-            | jq 'walk(if type == "object" and .versionConsistency == "" then del(.versionConsistency) else . end)' \
+            | jq 'walk(if type == "object" then with_entries(select(.value != "")) else . end)' \
             > /tmp/scheduled-log-task-def.json
           aws ecs register-task-definition --cli-input-json file:///tmp/scheduled-log-task-def.json >/dev/null
           ecspresso --config ecspresso/scheduled-notification/ecspresso.yml render task-definition \
-            | jq 'walk(if type == "object" and .versionConsistency == "" then del(.versionConsistency) else . end)' \
+            | jq 'walk(if type == "object" then with_entries(select(.value != "")) else . end)' \
             > /tmp/scheduled-notification-task-def.json
           aws ecs register-task-definition --cli-input-json file:///tmp/scheduled-notification-task-def.json >/dev/null
 
