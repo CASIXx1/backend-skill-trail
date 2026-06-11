@@ -29,18 +29,21 @@ aws s3 cp "$tfstate_url" "$tfstate_path" >/dev/null
 
 alb_dns_name="$(jq -r '.outputs.alb_dns_name.value // empty' "$tfstate_path")"
 ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' "$tfstate_path")"
+api_ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' "$tfstate_path")"
 worker_ecs_service_name="$(jq -r '.outputs.worker_ecs_service_name.value // empty' "$tfstate_path")"
 worker_queue_url="$(jq -r '.outputs.worker_queue_url.value // empty' "$tfstate_path")"
 worker_log_group_name="$(jq -r '.outputs.worker_log_group_name.value // empty' "$tfstate_path")"
 
 require_value "output.alb_dns_name" "$alb_dns_name"
 require_value "output.ecs_cluster_name" "$ecs_cluster_name"
+require_value "output.api_ecs_service_name" "$api_ecs_service_name"
 require_value "output.worker_ecs_service_name" "$worker_ecs_service_name"
 require_value "output.worker_queue_url" "$worker_queue_url"
 require_value "output.worker_log_group_name" "$worker_log_group_name"
 
 add_mask "$alb_dns_name"
 add_mask "$ecs_cluster_name"
+add_mask "$api_ecs_service_name"
 add_mask "$worker_ecs_service_name"
 add_mask "$worker_queue_url"
 add_mask "$worker_log_group_name"
@@ -65,6 +68,14 @@ wait_for_alb() {
   exit 1
 }
 
+wait_for_api_service() {
+  echo "Waiting for API ECS service to become stable."
+  aws ecs wait services-stable \
+    --cluster "$ecs_cluster_name" \
+    --services "$api_ecs_service_name"
+  echo "API ECS service is stable."
+}
+
 wait_for_worker_service() {
   echo "Waiting for worker ECS service to become stable."
   aws ecs wait services-stable \
@@ -74,28 +85,37 @@ wait_for_worker_service() {
 }
 
 enqueue_worker_job() {
-  local response_file
-  local status
-  response_file="$(mktemp)"
+  local max_attempts=12
+  local attempt=1
 
-  status="$(curl -sS -X POST -o "$response_file" -w '%{http_code}' "${base_url}/worker/jobs")"
-  if [[ "$status" != "202" ]]; then
-    echo "Unexpected status from /worker/jobs: expected 202, got ${status}" >&2
+  while [[ $attempt -le $max_attempts ]]; do
+    local response_file
+    local status
+    response_file="$(mktemp)"
+
+    status="$(curl -sS -X POST -o "$response_file" -w '%{http_code}' "${base_url}/worker/jobs")"
+    if [[ "$status" == "202" ]]; then
+      job_id="$(jq -r '.jobId // empty' "$response_file")"
+      message_id="$(jq -r '.messageId // empty' "$response_file")"
+      rm -f "$response_file"
+      require_value "worker job ID" "$job_id"
+      require_value "SQS message ID" "$message_id"
+      add_mask "$job_id"
+      add_mask "$message_id"
+      echo "Worker job enqueued: job_id=${job_id} message_id=${message_id}"
+      return 0
+    fi
+
+    echo "Attempt $attempt/$max_attempts: /worker/jobs not ready yet (status=${status}), waiting..." >&2
     cat "$response_file" >&2
+    echo >&2
     rm -f "$response_file"
-    exit 1
-  fi
+    sleep 10
+    attempt=$((attempt + 1))
+  done
 
-  job_id="$(jq -r '.jobId // empty' "$response_file")"
-  message_id="$(jq -r '.messageId // empty' "$response_file")"
-  rm -f "$response_file"
-
-  require_value "worker job ID" "$job_id"
-  require_value "SQS message ID" "$message_id"
-  add_mask "$job_id"
-  add_mask "$message_id"
-
-  echo "Worker job enqueued: job_id=${job_id} message_id=${message_id}"
+  echo "Worker job endpoint did not return 202 in time" >&2
+  exit 1
 }
 
 wait_for_queue_to_drain() {
@@ -189,6 +209,7 @@ wait_for_new_relic_worker_log() {
 }
 
 wait_for_alb
+wait_for_api_service
 wait_for_worker_service
 enqueue_worker_job
 wait_for_queue_to_drain

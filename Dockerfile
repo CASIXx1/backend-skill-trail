@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /server ./cmd/server
 
-FROM scratch
+FROM gcr.io/distroless/static-debian12:nonroot
 
 ENV PORT=8080
 
@@ -25,5 +25,4 @@ COPY --from=builder /server /server
 
 EXPOSE 8080
 
-USER 65532:65532
 ENTRYPOINT ["/server"]
