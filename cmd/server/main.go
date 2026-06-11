@@ -195,6 +195,7 @@ func (s *server) workerJobsHandler(w http.ResponseWriter, r *http.Request) {
 
 	messageID, err := s.workerSender.SendMessage(r.Context(), s.workerQueueURL, string(body))
 	if err != nil {
+		log.Printf("failed to send worker job: queue_url=%s job_id=%s error=%v", s.workerQueueURL, job.ID, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "ng",
 			"error":  "failed to send worker job",
