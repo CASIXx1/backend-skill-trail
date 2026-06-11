@@ -1,0 +1,59 @@
+{
+  "family": "{{ tfstate `output.scheduled_log_task_definition_family` }}",
+  "taskRoleArn": "{{ tfstate `output.ecs_task_role_arn` }}",
+  "executionRoleArn": "{{ tfstate `output.ecs_task_execution_role_arn` }}",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "{{ must_env `SCHEDULED_LOG_CONTAINER_NAME` }}",
+      "image": "{{ tfstate `output.scheduled_log_ecr_repository_url` }}:{{ must_env `IMAGE_TAG` }}",
+      "essential": true,
+      "environment": [
+        {
+          "name": "SCHEDULE_NAME",
+          "value": "{{ must_env `SCHEDULED_LOG_SCHEDULE_NAME` }}"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "options": {
+          "Name": "newrelic"
+        },
+        "secretOptions": [
+          {
+            "name": "apiKey",
+            "valueFrom": "{{ tfstate `output.external_service_secret_arn` }}:NEW_RELIC_LICENSE_KEY::"
+          }
+        ]
+      }
+    },
+    {
+      "name": "log_router",
+      "image": "{{ tfstate `output.new_relic_firelens_image` }}",
+      "essential": true,
+      "firelensConfiguration": {
+        "type": "fluentbit",
+        "options": {
+          "enable-ecs-log-metadata": "true"
+        }
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "{{ tfstate `output.scheduled_log_log_group_name` }}",
+          "awslogs-region": "{{ must_env `AWS_REGION` }}",
+          "awslogs-stream-prefix": "firelens"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "{{ env `SCHEDULED_LOG_TASK_CPU` `256` }}",
+  "memory": "{{ env `SCHEDULED_LOG_TASK_MEMORY` `512` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  }
+}

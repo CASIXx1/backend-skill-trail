@@ -67,3 +67,12 @@ jobs:
           platforms: linux/arm64
           push: false
           tags: backend-skill-trail-worker:ci
+
+      - name: Build scheduled-log image
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: .
+          file: Dockerfile.scheduled-log
+          platforms: linux/arm64
+          push: false
+          tags: backend-skill-trail-scheduled-log:ci

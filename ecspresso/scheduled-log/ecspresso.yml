@@ -1,0 +1,9 @@
+region: '{{ must_env `AWS_REGION` }}'
+cluster: '{{ must_env `SCHEDULED_LOG_ECS_CLUSTER_NAME` }}'
+service: '{{ must_env `SCHEDULED_LOG_CONTAINER_NAME` }}'
+task_definition: task-def.json
+timeout: 10m
+plugins:
+  - name: tfstate
+    config:
+      url: '{{ must_env `TFSTATE_URL` }}'
