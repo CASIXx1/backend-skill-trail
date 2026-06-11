@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.23.4 AS builder
+
+WORKDIR /app
+
+ARG TARGETOS
+ARG TARGETARCH
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY cmd ./cmd
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /worker ./cmd/worker
+
+FROM scratch
+
+COPY --from=builder /worker /worker
+
+USER 65532:65532
+ENTRYPOINT ["/worker"]

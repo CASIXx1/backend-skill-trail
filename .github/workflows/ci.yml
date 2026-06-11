@@ -62,3 +62,14 @@ jobs:
           tags: backend-skill-trail-migration:ci
           cache-from: type=gha,scope=migration
           cache-to: type=gha,mode=max,scope=migration
+
+      - name: Build worker image
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/arm64
+          push: false
+          tags: backend-skill-trail-worker:ci
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker

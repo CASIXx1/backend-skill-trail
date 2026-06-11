@@ -24,6 +24,12 @@ Docker image を build して ECR に push します。
 ./scripts/push-image.sh
 ```
 
+Worker image を同じ script で push する場合は、worker repository URL と Dockerfile を指定します。
+
+```sh
+ECR_REPOSITORY_URL="$WORKER_ECR_REPOSITORY_URL" DOCKERFILE=Dockerfile.worker ./scripts/push-image.sh
+```
+
 `docker push` が成功すると、push した image URI が表示されます。
 
 ## GitHub Actions
@@ -42,7 +48,7 @@ TF_STATE_BUCKET=<Terraform remote state bucket>
 TF_STATE_KEY=<Terraform remote state key>
 ```
 
-OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。ECR repository URL は tfstate の `output.api_ecr_repository_url` から取得します。
+OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。API、migration、worker の ECR repository URL は tfstate の output から取得します。
 
 ## ローカル ecspresso render
 
@@ -67,6 +73,9 @@ ecspresso の設定と定義ファイルを render します。
 ecspresso --envfile .env --config ecspresso/ecspresso.yml render config
 ecspresso --envfile .env --config ecspresso/ecspresso.yml render task-definition
 ecspresso --envfile .env --config ecspresso/ecspresso.yml render service-definition
+ecspresso --envfile .env --config ecspresso/worker/ecspresso.yml render config
+ecspresso --envfile .env --config ecspresso/worker/ecspresso.yml render task-definition
+ecspresso --envfile .env --config ecspresso/worker/ecspresso.yml render service-definition
 ```
 
 現在の ECS 状態との差分を確認します。
@@ -79,6 +88,7 @@ ECS service を deploy します。
 
 ```sh
 ecspresso --envfile .env --config ecspresso/ecspresso.yml deploy
+ecspresso --envfile .env --config ecspresso/worker/ecspresso.yml deploy
 ```
 
 ecspresso v2 では、`deploy` 実行時に ECS service が存在しない場合は作成されます。
@@ -118,7 +128,12 @@ FireLens で使う以下の値は tfstate から取得します。
 - `output.ecs_task_role_arn`
 - `output.ecs_task_execution_role_arn`
 - `output.api_ecr_repository_url`
+- `output.worker_ecr_repository_url`
 - `output.api_log_group_name`
+- `output.worker_log_group_name`
+- `output.worker_queue_url`
+- `output.worker_ecs_service_name`
+- `output.private_subnet_ids`
 
 インフラリポジトリには `modules/ecs-logs` があり、`/ecs/${name}/api` という CloudWatch Log Group を作成し、`api_log_group_name` として output します。最初の FireLens 構成では、application log と FireLens sidecar 自身の log を同じ Log Group に出し、stream prefix で分けます。
 
@@ -138,7 +153,17 @@ outbound 通信は NAT 経由なので、FireLens sidecar は `public.ecr.aws/aw
 
 ECS task security group で inbound `24224` port は開けません。FireLens はこの port を内部的に使うため、security group は ALB から application port へ必要な通信だけを許可します。
 
-この backend リポジトリには、まだ worker service 用の ecspresso 定義はありません。追加する場合も、private subnet、public IP なし、Terraform output ベースの network configuration を使います。
+Worker service 用の ecspresso 定義は `ecspresso/worker` にあります。Worker service も private subnet、public IP なし、Terraform output ベースの network configuration を使います。
+
+## Worker smoke test
+
+API task は `WORKER_QUEUE_URL` が設定されている場合、worker queue へ test job を送信できます。
+
+```sh
+curl -X POST https://your-api-domain/worker/jobs
+```
+
+成功時は HTTP `202` と `messageId` を返します。`WORKER_QUEUE_URL` が未設定の場合は HTTP `503` を返します。Worker task は SQS を long poll し、受信した message ID/body を構造化ログに出力してから message を削除します。実際の業務処理を追加するときは、処理成功後だけ delete する実装を維持してください。
 
 ### ecspresso 側の変更
 

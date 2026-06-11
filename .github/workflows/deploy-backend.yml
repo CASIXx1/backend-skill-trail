@@ -44,7 +44,7 @@ jobs:
       - name: Login to Amazon ECR
         run: |
           set -euo pipefail
-          for repository_url in "$ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
+          for repository_url in "$ECR_REPOSITORY_URL" "$WORKER_ECR_REPOSITORY_URL" "$MIGRATION_ECR_REPOSITORY_URL"; do
             ecr_registry="${repository_url%%/*}"
             echo "::add-mask::${ecr_registry}"
             aws ecr get-login-password --region "$AWS_REGION" \
@@ -76,6 +76,19 @@ jobs:
             .
           echo "Migration ECR image push completed."
 
+      - name: Build and push worker image
+        run: |
+          set -euo pipefail
+          image_uri="${WORKER_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          echo "::add-mask::${image_uri}"
+          docker buildx build \
+            --file Dockerfile.worker \
+            --platform "$DOCKER_PLATFORM" \
+            --tag "$image_uri" \
+            --push \
+            .
+          echo "Worker ECR image push completed."
+
       - name: Install ecspresso
         uses: kayac/ecspresso@v2
         with:
@@ -90,6 +103,9 @@ jobs:
           ecspresso --config ecspresso/migration/ecspresso.yml render config >/dev/null
           ecspresso --config ecspresso/migration/ecspresso.yml render task-definition >/dev/null
           ecspresso --config ecspresso/migration/ecspresso.yml render service-definition >/dev/null
+          ecspresso --config ecspresso/worker/ecspresso.yml render config >/dev/null
+          ecspresso --config ecspresso/worker/ecspresso.yml render task-definition >/dev/null
+          ecspresso --config ecspresso/worker/ecspresso.yml render service-definition >/dev/null
           echo "ecspresso render completed."
 
       - name: Run migration with ecspresso
@@ -108,6 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           ecspresso --config ecspresso/ecspresso.yml deploy
+          ecspresso --config ecspresso/worker/ecspresso.yml deploy
 
   log-test:
     needs: deploy

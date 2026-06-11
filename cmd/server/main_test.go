@@ -1,12 +1,32 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+type fakeWorkerMessageSender struct {
+	messageID string
+	err       error
+	queueURL  string
+	body      string
+	calls     int
+}
+
+func (f *fakeWorkerMessageSender) SendMessage(ctx context.Context, queueURL string, body string) (string, error) {
+	f.calls++
+	f.queueURL = queueURL
+	f.body = body
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.messageID, nil
+}
 
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -115,6 +135,86 @@ func TestLogTestHandler(t *testing.T) {
 
 	if body["count"] != float64(4) {
 		t.Fatalf("expected count 4, got %v", body["count"])
+	}
+}
+
+func TestWorkerJobsHandlerMissingConfig(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/worker/jobs", nil)
+	rec := httptest.NewRecorder()
+
+	s := &server{}
+	s.workerJobsHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body["status"] != "ng" {
+		t.Fatalf("expected status ng, got %q", body["status"])
+	}
+}
+
+func TestWorkerJobsHandlerSuccess(t *testing.T) {
+	sender := &fakeWorkerMessageSender{messageID: "sqs-message-1"}
+	s := &server{
+		workerQueueURL: "https://sqs.example/queue",
+		workerSender:   sender,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/worker/jobs", nil)
+	rec := httptest.NewRecorder()
+
+	s.workerJobsHandler(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+	}
+	if sender.calls != 1 {
+		t.Fatalf("expected one send call, got %d", sender.calls)
+	}
+	if sender.queueURL != "https://sqs.example/queue" {
+		t.Fatalf("unexpected queue URL: %q", sender.queueURL)
+	}
+
+	var sent workerJobMessage
+	if err := json.Unmarshal([]byte(sender.body), &sent); err != nil {
+		t.Fatalf("failed to decode sent worker message: %v", err)
+	}
+	if sent.ID == "" {
+		t.Fatal("expected generated worker job ID")
+	}
+	if sent.Type != "worker.test" {
+		t.Fatalf("expected worker.test type, got %q", sent.Type)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if body["messageId"] != "sqs-message-1" {
+		t.Fatalf("expected messageId sqs-message-1, got %q", body["messageId"])
+	}
+}
+
+func TestWorkerJobsHandlerSendFailure(t *testing.T) {
+	sender := &fakeWorkerMessageSender{err: errors.New("send failed")}
+	s := &server{
+		workerQueueURL: "https://sqs.example/queue",
+		workerSender:   sender,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/worker/jobs", nil)
+	rec := httptest.NewRecorder()
+
+	s.workerJobsHandler(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
 	}
 }
 
