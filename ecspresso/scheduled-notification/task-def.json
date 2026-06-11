@@ -1,26 +1,26 @@
 {
-  "family": "{{ tfstate `output.scheduled_log_task_definition_family` }}",
+  "family": "{{ tfstate `output.scheduled_notification_task_definition_family` }}",
   "taskRoleArn": "{{ tfstate `output.ecs_task_role_arn` }}",
   "executionRoleArn": "{{ tfstate `output.ecs_task_execution_role_arn` }}",
   "networkMode": "awsvpc",
   "containerDefinitions": [
     {
-      "name": "{{ must_env `SCHEDULED_LOG_CONTAINER_NAME` }}",
+      "name": "{{ must_env `SCHEDULED_NOTIFICATION_CONTAINER_NAME` }}",
       "image": "{{ tfstate `output.scheduled_log_ecr_repository_url` }}:{{ must_env `IMAGE_TAG` }}",
       "essential": true,
       "versionConsistency": "enabled",
       "environment": [
         {
           "name": "JOB_NAME",
-          "value": "{{ must_env `SCHEDULED_LOG_JOB_NAME` }}"
+          "value": "{{ must_env `SCHEDULED_NOTIFICATION_JOB_NAME` }}"
         },
         {
           "name": "SCHEDULE_NAME",
-          "value": "{{ must_env `SCHEDULED_LOG_SCHEDULE_NAME` }}"
+          "value": "{{ must_env `SCHEDULED_NOTIFICATION_SCHEDULE_NAME` }}"
         },
         {
           "name": "SNS_TOPIC_ARN",
-          "value": "{{ must_env `SCHEDULED_LOG_SNS_TOPIC_ARN` }}"
+          "value": "{{ must_env `SCHEDULED_NOTIFICATION_SNS_TOPIC_ARN` }}"
         }
       ],
       "logConfiguration": {
@@ -60,8 +60,8 @@
   "requiresCompatibilities": [
     "FARGATE"
   ],
-  "cpu": "{{ env `SCHEDULED_LOG_TASK_CPU` `256` }}",
-  "memory": "{{ env `SCHEDULED_LOG_TASK_MEMORY` `512` }}",
+  "cpu": "{{ env `SCHEDULED_NOTIFICATION_TASK_CPU` `256` }}",
+  "memory": "{{ env `SCHEDULED_NOTIFICATION_TASK_MEMORY` `512` }}",
   "runtimePlatform": {
     "cpuArchitecture": "ARM64",
     "operatingSystemFamily": "LINUX"

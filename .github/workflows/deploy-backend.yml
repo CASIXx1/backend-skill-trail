@@ -113,6 +113,8 @@ jobs:
           ecspresso --config ecspresso/worker/ecspresso.yml render service-definition >/dev/null
           ecspresso --config ecspresso/scheduled-log/ecspresso.yml render config >/dev/null
           ecspresso --config ecspresso/scheduled-log/ecspresso.yml render task-definition >/dev/null
+          ecspresso --config ecspresso/scheduled-notification/ecspresso.yml render config >/dev/null
+          ecspresso --config ecspresso/scheduled-notification/ecspresso.yml render task-definition >/dev/null
           echo "ecspresso render completed."
 
       - name: Run migration with ecspresso
@@ -132,8 +134,14 @@ jobs:
           set -euo pipefail
           ecspresso --config ecspresso/ecspresso.yml deploy
           ecspresso --config ecspresso/worker/ecspresso.yml deploy
-          ecspresso --config ecspresso/scheduled-log/ecspresso.yml render task-definition > /tmp/scheduled-log-task-def.json
+          ecspresso --config ecspresso/scheduled-log/ecspresso.yml render task-definition \
+            | jq 'walk(if type == "object" and .versionConsistency == "" then del(.versionConsistency) else . end)' \
+            > /tmp/scheduled-log-task-def.json
           aws ecs register-task-definition --cli-input-json file:///tmp/scheduled-log-task-def.json >/dev/null
+          ecspresso --config ecspresso/scheduled-notification/ecspresso.yml render task-definition \
+            | jq 'walk(if type == "object" and .versionConsistency == "" then del(.versionConsistency) else . end)' \
+            > /tmp/scheduled-notification-task-def.json
+          aws ecs register-task-definition --cli-input-json file:///tmp/scheduled-notification-task-def.json >/dev/null
 
   log-test:
     needs: deploy
