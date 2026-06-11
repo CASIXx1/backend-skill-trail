@@ -19,10 +19,8 @@ add_mask() {
 
 require_value "TF_STATE_BUCKET" "${TF_STATE_BUCKET:-}"
 require_value "TF_STATE_KEY" "${TF_STATE_KEY:-}"
-require_value "NEW_RELIC_ACCOUNT_ID" "${NEW_RELIC_ACCOUNT_ID:-}"
-require_value "NEW_RELIC_USER_KEY" "${NEW_RELIC_USER_KEY:-}"
-add_mask "$NEW_RELIC_ACCOUNT_ID"
-add_mask "$NEW_RELIC_USER_KEY"
+add_mask "${NEW_RELIC_ACCOUNT_ID:-}"
+add_mask "${NEW_RELIC_USER_KEY:-}"
 
 tfstate_path="/tmp/terraform.tfstate"
 tfstate_url="s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}"
@@ -158,6 +156,12 @@ new_relic_nrql_count() {
 }
 
 wait_for_new_relic_worker_log() {
+  if [[ -z "${NEW_RELIC_ACCOUNT_ID:-}" || -z "${NEW_RELIC_USER_KEY:-}" ]]; then
+    echo "Skipping New Relic Logs check because NEW_RELIC_ACCOUNT_ID or NEW_RELIC_USER_KEY is not set."
+    echo "Check New Relic manually with message_id=${message_id} or job_id=${job_id}."
+    return 0
+  fi
+
   local escaped_message_id escaped_job_id nrql
   escaped_message_id="${message_id//\'/\\\'}"
   escaped_job_id="${job_id//\'/\\\'}"

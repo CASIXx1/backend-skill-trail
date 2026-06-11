@@ -49,11 +49,9 @@ AWS_REGION=<AWS region>
 AWS_ROLE_ARN=<terraform output -raw github_actions_backend_role_arn の値>
 TF_STATE_BUCKET=<Terraform remote state bucket>
 TF_STATE_KEY=<Terraform remote state key>
-NEW_RELIC_ACCOUNT_ID=<New Relic account ID>
-NEW_RELIC_USER_KEY=<New Relic NerdGraph user/API key>
 ```
 
-OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。API、migration、worker の ECR repository URL は tfstate の output から取得します。`NEW_RELIC_USER_KEY` はActionsからNerdGraphでNRQLを実行し、worker logがNew Relic Logsへ届いたことを確認するために使います。
+OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。API、migration、worker の ECR repository URL は tfstate の output から取得します。
 
 ## ローカル ecspresso render
 
@@ -176,7 +174,9 @@ GitHub Actions の `worker-e2e-test.yml` は、deploy後に以下を確認しま
 2. worker ECS service が stable になる。
 3. `POST /worker/jobs` が HTTP `202` と `jobId` / `messageId` を返す。
 4. worker SQS queue の visible / not visible / delayed message count が `0` になる。
-5. New Relic Logs に同じ `messageId` または `jobId` を含むworker logが届く。
+5. `messageId` と `jobId` をActions logに出力し、New Relic Logsで手動確認できるようにする。
+
+`NEW_RELIC_ACCOUNT_ID` と `NEW_RELIC_USER_KEY` をworkflow envとして追加した場合だけ、ActionsからNerdGraphでNew Relic Logsへの到達確認も行います。未設定の場合、この確認はskipします。
 
 ### ecspresso 側の変更
 

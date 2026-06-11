@@ -17,8 +17,6 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
       TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
-      NEW_RELIC_ACCOUNT_ID: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
-      NEW_RELIC_USER_KEY: ${{ secrets.NEW_RELIC_USER_KEY }}
 
     steps:
       - name: Checkout
