@@ -68,17 +68,27 @@ fi
 aws s3 cp "$tfstate_url" "$tfstate_path" >/dev/null
 
 ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' "$tfstate_path")"
+worker_ecr_repository_url="$(jq -r '.outputs.worker_ecr_repository_url.value // empty' "$tfstate_path")"
 migration_ecr_repository_url="$(jq -r '.outputs.migration_ecr_repository_url.value // empty' "$tfstate_path")"
 ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' "$tfstate_path")"
 ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' "$tfstate_path")"
+worker_ecs_service_name="$(jq -r '.outputs.worker_ecs_service_name.value // empty' "$tfstate_path")"
+worker_queue_url="$(jq -r '.outputs.worker_queue_url.value // empty' "$tfstate_path")"
+worker_log_group_name="$(jq -r '.outputs.worker_log_group_name.value // empty' "$tfstate_path")"
 migration_ecspresso_env="$(jq -c '.outputs.migration_ecspresso_env.value // empty' "$tfstate_path")"
+worker_ecspresso_env="$(jq -c '.outputs.worker_ecspresso_env.value // empty' "$tfstate_path")"
 
 required_outputs=(
   ecr_repository_url
+  worker_ecr_repository_url
   migration_ecr_repository_url
   ecs_cluster_name
   ecs_service_name
+  worker_ecs_service_name
+  worker_queue_url
+  worker_log_group_name
   migration_ecspresso_env
+  worker_ecspresso_env
 )
 
 for name in "${required_outputs[@]}"; do
@@ -96,6 +106,9 @@ sensitive_output_names=(
   external_service_secret_arn
   migration_log_group_name
   new_relic_firelens_image
+  worker_log_group_name
+  worker_queue_arn
+  worker_queue_url
 )
 
 for output_name in "${sensitive_output_names[@]}"; do
@@ -104,6 +117,7 @@ for output_name in "${sensitive_output_names[@]}"; do
 done
 
 mask_json_string_values "$migration_ecspresso_env"
+mask_json_string_values "$worker_ecspresso_env"
 
 migration_env_keys=(
   ASSIGN_PUBLIC_IP
@@ -126,6 +140,28 @@ for key in "${migration_env_keys[@]}"; do
   echo "MIGRATION_${key}=${value}" >> "$GITHUB_ENV"
 done
 
+worker_env_keys=(
+  ASSIGN_PUBLIC_IP
+  CONTAINER_NAME
+  ECS_CLUSTER_NAME
+  ECS_SERVICE_NAME
+  SECURITY_GROUP_IDS
+  SUBNET_IDS
+  TASK_EXECUTION_ROLE_ARN
+  TASK_ROLE_ARN
+)
+
+for key in "${worker_env_keys[@]}"; do
+  value="$(jq -r --arg key "$key" '.[$key] // empty' <<< "$worker_ecspresso_env")"
+  require_value "worker_ecspresso_env.${key}" "$value"
+  add_mask "$value"
+  if [[ "$key" == "ASSIGN_PUBLIC_IP" ]]; then
+    value="$(normalize_assign_public_ip "$value")"
+    add_mask "$value"
+  fi
+  echo "WORKER_${key}=${value}" >> "$GITHUB_ENV"
+done
+
 migration_subnet_ids="$(jq -r '.SUBNET_IDS' <<< "$migration_ecspresso_env")"
 migration_security_group_ids="$(jq -r '.SECURITY_GROUP_IDS' <<< "$migration_ecspresso_env")"
 migration_subnet_ids_json="$(csv_to_json_array "$migration_subnet_ids")"
@@ -139,13 +175,22 @@ add_mask "$tfstate_url"
 
 {
   echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
+  echo "WORKER_ECR_REPOSITORY_URL=${worker_ecr_repository_url}"
   echo "MIGRATION_ECR_REPOSITORY_URL=${migration_ecr_repository_url}"
   echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
   echo "ECS_SERVICE_NAME=${ecs_service_name}"
+  echo "WORKER_ECS_SERVICE_NAME=${worker_ecs_service_name}"
+  echo "WORKER_QUEUE_URL=${worker_queue_url}"
+  echo "WORKER_LOG_GROUP_NAME=${worker_log_group_name}"
   echo "TFSTATE_URL=${tfstate_url}"
   echo "CONTAINER_NAME=app"
   echo "CONTAINER_PORT=8080"
   echo "ASSIGN_PUBLIC_IP=DISABLED"
+  echo "WORKER_CONTAINER_NAME=worker"
+  echo "WORKER_DESIRED_COUNT=1"
+  echo "WORKER_WAIT_TIME_SECONDS=20"
+  echo "WORKER_MAX_MESSAGES=10"
+  echo "WORKER_VISIBILITY_TIMEOUT=30"
   echo "MIGRATION_SUBNET_IDS_JSON=${migration_subnet_ids_json}"
   echo "MIGRATION_SECURITY_GROUP_IDS_JSON=${migration_security_group_ids_json}"
 } >> "$GITHUB_ENV"

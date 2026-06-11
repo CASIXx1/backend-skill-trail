@@ -1,11 +1,10 @@
 {
-  "serviceName": "{{ tfstate `output.api_ecs_service_name` }}",
-  "desiredCount": {{ env `DESIRED_COUNT` `1` }},
+  "serviceName": "{{ tfstate `output.worker_ecs_service_name` }}",
+  "desiredCount": {{ env `WORKER_DESIRED_COUNT` `1` }},
   "launchType": "FARGATE",
   "platformVersion": "LATEST",
   "availabilityZoneRebalancing": "ENABLED",
   "propagateTags": "NONE",
-  "healthCheckGracePeriodSeconds": 0,
   "deploymentConfiguration": {
     "deploymentCircuitBreaker": {
       "enable": true,
@@ -14,20 +13,13 @@
     "maximumPercent": 200,
     "minimumHealthyPercent": 100
   },
-  "loadBalancers": [
-    {
-      "targetGroupArn": "{{ tfstate `output.api_target_group_arn` }}",
-      "containerName": "{{ must_env `CONTAINER_NAME` }}",
-      "containerPort": {{ must_env `CONTAINER_PORT` }}
-    }
-  ],
   "networkConfiguration": {
     "awsvpcConfiguration": {
       "subnets": {{ tfstate `output.private_subnet_ids` }},
       "securityGroups": [
         "{{ tfstate `output.ecs_task_security_group_id` }}"
       ],
-      "assignPublicIp": "{{ must_env `ASSIGN_PUBLIC_IP` }}"
+      "assignPublicIp": "{{ must_env `WORKER_ASSIGN_PUBLIC_IP` }}"
     }
   }
 }

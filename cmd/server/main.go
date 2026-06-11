@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
@@ -40,8 +42,24 @@ type dbConfig struct {
 }
 
 type server struct {
-	db    *sql.DB
-	cache *redis.Client
+	db             *sql.DB
+	cache          *redis.Client
+	workerQueueURL string
+	workerSender   workerMessageSender
+}
+
+type workerMessageSender interface {
+	SendMessage(ctx context.Context, queueURL string, body string) (string, error)
+}
+
+type sqsWorkerMessageSender struct {
+	client *sqs.Client
+}
+
+type workerJobMessage struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 func main() {
@@ -64,9 +82,17 @@ func main() {
 		defer cache.Close()
 	}
 
+	workerQueueURL := os.Getenv("WORKER_QUEUE_URL")
+	workerSender, err := openWorkerSender(context.Background(), workerQueueURL)
+	if err != nil {
+		log.Printf("warning: worker queue sender is not initialized: %v", err)
+	}
+
 	s := &server{
-		db:    db,
-		cache: cache,
+		db:             db,
+		cache:          cache,
+		workerQueueURL: workerQueueURL,
+		workerSender:   workerSender,
 	}
 
 	mux := http.NewServeMux()
@@ -77,6 +103,7 @@ func main() {
 	mux.HandleFunc("/cache/set", s.cacheSetHandler)
 	mux.HandleFunc("/cache/list", s.cacheListHandler)
 	mux.HandleFunc("/cache/session", s.cacheSessionHandler)
+	mux.HandleFunc("/worker/jobs", s.workerJobsHandler)
 	mux.HandleFunc("/logs/test", logTestHandler)
 	mux.HandleFunc("/logs/status/ok", okLogHandler)
 	mux.HandleFunc("/logs/status/error", errorLogHandler)
@@ -109,6 +136,78 @@ func main() {
 	}
 
 	log.Println("server stopped")
+}
+
+func (s *sqsWorkerMessageSender) SendMessage(ctx context.Context, queueURL string, body string) (string, error) {
+	out, err := s.client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    &queueURL,
+		MessageBody: &body,
+	})
+	if err != nil {
+		return "", err
+	}
+	if out.MessageId == nil {
+		return "", fmt.Errorf("sqs send succeeded without message id")
+	}
+	return *out.MessageId, nil
+}
+
+func openWorkerSender(ctx context.Context, queueURL string) (workerMessageSender, error) {
+	if queueURL == "" {
+		return nil, nil
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &sqsWorkerMessageSender{client: sqs.NewFromConfig(cfg)}, nil
+}
+
+func (s *server) workerJobsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+
+	if s.workerQueueURL == "" || s.workerSender == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "ng",
+			"error":  "worker queue is not configured",
+		})
+		return
+	}
+
+	now := time.Now().UTC()
+	job := workerJobMessage{
+		ID:        fmt.Sprintf("worker-job-%d", now.UnixNano()),
+		Type:      "worker.test",
+		CreatedAt: now,
+	}
+
+	body, err := json.Marshal(job)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to encode worker job"})
+		return
+	}
+
+	messageID, err := s.workerSender.SendMessage(r.Context(), s.workerQueueURL, string(body))
+	if err != nil {
+		log.Printf("failed to send worker job: queue_url=%s job_id=%s error=%v", s.workerQueueURL, job.ID, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"status": "ng",
+			"error":  "failed to send worker job",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":    "accepted",
+		"jobId":     job.ID,
+		"messageId": messageID,
+	})
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

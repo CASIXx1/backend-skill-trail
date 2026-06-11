@@ -15,14 +15,10 @@ COPY cmd ./cmd
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /server ./cmd/server
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /worker ./cmd/worker
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
-ENV PORT=8080
+COPY --from=builder /worker /worker
 
-COPY --from=builder /server /server
-
-EXPOSE 8080
-
-ENTRYPOINT ["/server"]
+ENTRYPOINT ["/worker"]

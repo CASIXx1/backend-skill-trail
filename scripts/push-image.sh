@@ -28,11 +28,12 @@ done
 
 ECR_REGISTRY="${ECR_REPOSITORY_URL%%/*}"
 IMAGE_URI="${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-docker build --platform "$DOCKER_PLATFORM" -t "$IMAGE_URI" .
+docker build --platform "$DOCKER_PLATFORM" --file "$DOCKERFILE" -t "$IMAGE_URI" .
 docker push "$IMAGE_URI"
 
 echo "$IMAGE_URI"
