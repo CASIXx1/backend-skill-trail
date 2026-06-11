@@ -4,6 +4,13 @@
 .vscode
 .env
 .env.*
+*.env
+*.secret
+*.secrets
+*.pem
+*.key
+id_rsa
+id_ed25519
 README.md
 bin
 dist
