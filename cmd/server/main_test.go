@@ -42,7 +42,8 @@ func TestDBHealthHandlerMissingConfig(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/db/health", nil)
 	rec := httptest.NewRecorder()
 
-	dbHealthHandler(rec, req)
+	s := &server{}
+	s.dbHealthHandler(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
@@ -72,7 +73,8 @@ func TestUsersTableHandlerMissingConfig(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/db/users-table", nil)
 	rec := httptest.NewRecorder()
 
-	usersTableHandler(rec, req)
+	s := &server{}
+	s.usersTableHandler(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
