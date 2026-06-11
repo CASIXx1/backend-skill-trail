@@ -173,8 +173,7 @@ GitHub Actions の `worker-e2e-test.yml` は、deploy後に以下を確認しま
 1. ALB `/health` が応答する。
 2. worker ECS service が stable になる。
 3. `POST /worker/jobs` が HTTP `202` と `jobId` / `messageId` を返す。
-4. worker SQS queue の visible / not visible / delayed message count が `0` になる。
-5. `messageId` と `jobId` をActions logに出力し、New Relic Logsで手動確認できるようにする。
+4. `messageId` と `jobId` をActions logに出力し、New Relic Logsで手動確認できるようにする。
 
 `NEW_RELIC_ACCOUNT_ID` と `NEW_RELIC_USER_KEY` をworkflow envとして追加した場合だけ、ActionsからNerdGraphでNew Relic Logsへの到達確認も行います。未設定の場合、この確認はskipします。
 

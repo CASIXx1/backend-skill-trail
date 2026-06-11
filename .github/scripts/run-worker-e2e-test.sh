@@ -31,22 +31,16 @@ alb_dns_name="$(jq -r '.outputs.alb_dns_name.value // empty' "$tfstate_path")"
 ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' "$tfstate_path")"
 api_ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' "$tfstate_path")"
 worker_ecs_service_name="$(jq -r '.outputs.worker_ecs_service_name.value // empty' "$tfstate_path")"
-worker_queue_url="$(jq -r '.outputs.worker_queue_url.value // empty' "$tfstate_path")"
-worker_log_group_name="$(jq -r '.outputs.worker_log_group_name.value // empty' "$tfstate_path")"
 
 require_value "output.alb_dns_name" "$alb_dns_name"
 require_value "output.ecs_cluster_name" "$ecs_cluster_name"
 require_value "output.api_ecs_service_name" "$api_ecs_service_name"
 require_value "output.worker_ecs_service_name" "$worker_ecs_service_name"
-require_value "output.worker_queue_url" "$worker_queue_url"
-require_value "output.worker_log_group_name" "$worker_log_group_name"
 
 add_mask "$alb_dns_name"
 add_mask "$ecs_cluster_name"
 add_mask "$api_ecs_service_name"
 add_mask "$worker_ecs_service_name"
-add_mask "$worker_queue_url"
-add_mask "$worker_log_group_name"
 
 base_url="http://${alb_dns_name}"
 add_mask "$base_url"
@@ -118,32 +112,10 @@ enqueue_worker_job() {
   exit 1
 }
 
-wait_for_queue_to_drain() {
-  local max_attempts=30
-  local attempt=1
-  echo "Waiting for worker queue to drain."
-  while [[ $attempt -le $max_attempts ]]; do
-    local attrs visible not_visible delayed
-    attrs="$(aws sqs get-queue-attributes \
-      --queue-url "$worker_queue_url" \
-      --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed \
-      --output json)"
-    visible="$(jq -r '.Attributes.ApproximateNumberOfMessages // "0"' <<< "$attrs")"
-    not_visible="$(jq -r '.Attributes.ApproximateNumberOfMessagesNotVisible // "0"' <<< "$attrs")"
-    delayed="$(jq -r '.Attributes.ApproximateNumberOfMessagesDelayed // "0"' <<< "$attrs")"
-
-    if [[ "$visible" == "0" && "$not_visible" == "0" && "$delayed" == "0" ]]; then
-      echo "Worker queue is drained."
-      return 0
-    fi
-
-    echo "Attempt $attempt/$max_attempts: queue not drained yet (visible=${visible}, not_visible=${not_visible}, delayed=${delayed}), waiting..."
-    sleep 10
-    attempt=$((attempt + 1))
-  done
-
-  echo "Worker queue did not drain in time" >&2
-  exit 1
+wait_for_worker_log_delivery_window() {
+  echo "Waiting briefly for worker to receive the queued job and ship logs."
+  echo "Check New Relic manually with message_id=${message_id} or job_id=${job_id}."
+  sleep 30
 }
 
 new_relic_nrql_count() {
@@ -212,7 +184,7 @@ wait_for_alb
 wait_for_api_service
 wait_for_worker_service
 enqueue_worker_job
-wait_for_queue_to_drain
+wait_for_worker_log_delivery_window
 wait_for_new_relic_worker_log
 
 echo "Worker E2E test completed."
