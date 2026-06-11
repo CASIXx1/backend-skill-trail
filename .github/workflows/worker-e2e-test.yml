@@ -1,0 +1,36 @@
+name: Worker E2E Test
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-worker-e2e-test:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
+      NEW_RELIC_ACCOUNT_ID: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
+      NEW_RELIC_USER_KEY: ${{ secrets.NEW_RELIC_USER_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+
+      - name: Validate and mask GitHub environment secrets
+        run: .github/scripts/validate-aws-env.sh
+
+      - name: Assume AWS role with OIDC
+        run: .github/scripts/assume-aws-role.sh
+        env:
+          AWS_ROLE_SESSION_NAME: github-actions-worker-e2e-test
+
+      - name: Run worker E2E test
+        run: .github/scripts/run-worker-e2e-test.sh

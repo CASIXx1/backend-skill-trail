@@ -38,6 +38,9 @@ ECR_REPOSITORY_URL="$WORKER_ECR_REPOSITORY_URL" DOCKERFILE=Dockerfile.worker ./s
 | --- | --- |
 | `ci.yml` | test / vet / Docker build |
 | `deploy-backend.yml` | ECR push / ECS deploy |
+| `log-test.yml` | API log smoke test |
+| `cache-test.yml` | API cache smoke test |
+| `worker-e2e-test.yml` | API -> SQS -> worker smoke test and New Relic Logs check |
 
 GitHub Environment `dev` に以下の secrets を設定します。
 
@@ -46,9 +49,11 @@ AWS_REGION=<AWS region>
 AWS_ROLE_ARN=<terraform output -raw github_actions_backend_role_arn の値>
 TF_STATE_BUCKET=<Terraform remote state bucket>
 TF_STATE_KEY=<Terraform remote state key>
+NEW_RELIC_ACCOUNT_ID=<New Relic account ID>
+NEW_RELIC_USER_KEY=<New Relic NerdGraph user/API key>
 ```
 
-OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。API、migration、worker の ECR repository URL は tfstate の output から取得します。
+OIDC trust policy は GitHub Environment `dev` の `sub` claim を許可します。API、migration、worker の ECR repository URL は tfstate の output から取得します。`NEW_RELIC_USER_KEY` はActionsからNerdGraphでNRQLを実行し、worker logがNew Relic Logsへ届いたことを確認するために使います。
 
 ## ローカル ecspresso render
 
@@ -164,6 +169,14 @@ curl -X POST https://your-api-domain/worker/jobs
 ```
 
 成功時は HTTP `202` と `messageId` を返します。`WORKER_QUEUE_URL` が未設定の場合は HTTP `503` を返します。Worker task は SQS を long poll し、受信した message ID/body を構造化ログに出力してから message を削除します。実際の業務処理を追加するときは、処理成功後だけ delete する実装を維持してください。
+
+GitHub Actions の `worker-e2e-test.yml` は、deploy後に以下を確認します。
+
+1. ALB `/health` が応答する。
+2. worker ECS service が stable になる。
+3. `POST /worker/jobs` が HTTP `202` と `jobId` / `messageId` を返す。
+4. worker SQS queue の visible / not visible / delayed message count が `0` になる。
+5. New Relic Logs に同じ `messageId` または `jobId` を含むworker logが届く。
 
 ### ecspresso 側の変更
 
