@@ -70,11 +70,20 @@ aws s3 cp "$tfstate_url" "$tfstate_path" >/dev/null
 ecr_repository_url="$(jq -r '.outputs.api_ecr_repository_url.value // empty' "$tfstate_path")"
 worker_ecr_repository_url="$(jq -r '.outputs.worker_ecr_repository_url.value // empty' "$tfstate_path")"
 migration_ecr_repository_url="$(jq -r '.outputs.migration_ecr_repository_url.value // empty' "$tfstate_path")"
+scheduled_log_ecr_repository_url="$(jq -r '.outputs.scheduled_log_ecr_repository_url.value // empty' "$tfstate_path")"
 ecs_cluster_name="$(jq -r '.outputs.ecs_cluster_name.value // empty' "$tfstate_path")"
 ecs_service_name="$(jq -r '.outputs.api_ecs_service_name.value // empty' "$tfstate_path")"
 worker_ecs_service_name="$(jq -r '.outputs.worker_ecs_service_name.value // empty' "$tfstate_path")"
 worker_queue_url="$(jq -r '.outputs.worker_queue_url.value // empty' "$tfstate_path")"
 worker_log_group_name="$(jq -r '.outputs.worker_log_group_name.value // empty' "$tfstate_path")"
+scheduled_log_log_group_name="$(jq -r '.outputs.scheduled_log_log_group_name.value // empty' "$tfstate_path")"
+scheduled_log_task_definition_family="$(jq -r '.outputs.scheduled_log_task_definition_family.value // empty' "$tfstate_path")"
+scheduled_notification_task_definition_family="$(jq -r '.outputs.scheduled_notification_task_definition_family.value // empty' "$tfstate_path")"
+scheduled_log_scheduler_name="$(jq -r '.outputs.scheduled_log_scheduler_name.value // empty' "$tfstate_path")"
+scheduled_notification_scheduler_name="$(jq -r '.outputs.scheduled_notification_scheduler_name.value // empty' "$tfstate_path")"
+scheduled_notification_topic_arn="$(jq -r '.outputs.scheduled_notification_topic_arn.value // empty' "$tfstate_path")"
+scheduled_log_ecspresso_env="$(jq -c '.outputs.scheduled_log_ecspresso_env.value // empty' "$tfstate_path")"
+scheduled_notification_ecspresso_env="$(jq -c '.outputs.scheduled_notification_ecspresso_env.value // empty' "$tfstate_path")"
 migration_ecspresso_env="$(jq -c '.outputs.migration_ecspresso_env.value // empty' "$tfstate_path")"
 worker_ecspresso_env="$(jq -c '.outputs.worker_ecspresso_env.value // empty' "$tfstate_path")"
 
@@ -82,13 +91,22 @@ required_outputs=(
   ecr_repository_url
   worker_ecr_repository_url
   migration_ecr_repository_url
+  scheduled_log_ecr_repository_url
   ecs_cluster_name
   ecs_service_name
   worker_ecs_service_name
   worker_queue_url
   worker_log_group_name
+  scheduled_log_log_group_name
+  scheduled_log_task_definition_family
+  scheduled_notification_task_definition_family
+  scheduled_log_scheduler_name
+  scheduled_notification_scheduler_name
+  scheduled_notification_topic_arn
   migration_ecspresso_env
   worker_ecspresso_env
+  scheduled_log_ecspresso_env
+  scheduled_notification_ecspresso_env
 )
 
 for name in "${required_outputs[@]}"; do
@@ -105,8 +123,15 @@ sensitive_output_names=(
   database_writer_endpoint
   external_service_secret_arn
   migration_log_group_name
+  scheduled_log_log_group_name
+  scheduled_notification_task_definition_family
+  scheduled_notification_scheduler_name
+  scheduled_notification_topic_arn
   new_relic_firelens_image
+  new_relic_log_endpoint
   worker_log_group_name
+  scheduled_log_task_definition_family
+  scheduled_log_scheduler_name
   worker_queue_arn
   worker_queue_url
 )
@@ -118,6 +143,8 @@ done
 
 mask_json_string_values "$migration_ecspresso_env"
 mask_json_string_values "$worker_ecspresso_env"
+mask_json_string_values "$scheduled_log_ecspresso_env"
+mask_json_string_values "$scheduled_notification_ecspresso_env"
 
 migration_env_keys=(
   ASSIGN_PUBLIC_IP
@@ -162,6 +189,56 @@ for key in "${worker_env_keys[@]}"; do
   echo "WORKER_${key}=${value}" >> "$GITHUB_ENV"
 done
 
+scheduled_log_env_keys=(
+  ASSIGN_PUBLIC_IP
+  AWS_REGION
+  CONTAINER_NAME
+  ECS_CLUSTER_NAME
+  JOB_NAME
+  LOG_GROUP_NAME
+  SECURITY_GROUP_IDS
+  SNS_TOPIC_ARN
+  SUBNET_IDS
+  TASK_EXECUTION_ROLE_ARN
+  TASK_ROLE_ARN
+)
+
+for key in "${scheduled_log_env_keys[@]}"; do
+  value="$(jq -r --arg key "$key" '.[$key] // empty' <<< "$scheduled_log_ecspresso_env")"
+  require_value "scheduled_log_ecspresso_env.${key}" "$value"
+  add_mask "$value"
+  if [[ "$key" == "ASSIGN_PUBLIC_IP" ]]; then
+    value="$(normalize_assign_public_ip "$value")"
+    add_mask "$value"
+  fi
+  echo "SCHEDULED_LOG_${key}=${value}" >> "$GITHUB_ENV"
+done
+
+scheduled_notification_env_keys=(
+  ASSIGN_PUBLIC_IP
+  AWS_REGION
+  CONTAINER_NAME
+  ECS_CLUSTER_NAME
+  JOB_NAME
+  LOG_GROUP_NAME
+  SECURITY_GROUP_IDS
+  SNS_TOPIC_ARN
+  SUBNET_IDS
+  TASK_EXECUTION_ROLE_ARN
+  TASK_ROLE_ARN
+)
+
+for key in "${scheduled_notification_env_keys[@]}"; do
+  value="$(jq -r --arg key "$key" '.[$key] // empty' <<< "$scheduled_notification_ecspresso_env")"
+  require_value "scheduled_notification_ecspresso_env.${key}" "$value"
+  add_mask "$value"
+  if [[ "$key" == "ASSIGN_PUBLIC_IP" ]]; then
+    value="$(normalize_assign_public_ip "$value")"
+    add_mask "$value"
+  fi
+  echo "SCHEDULED_NOTIFICATION_${key}=${value}" >> "$GITHUB_ENV"
+done
+
 migration_subnet_ids="$(jq -r '.SUBNET_IDS' <<< "$migration_ecspresso_env")"
 migration_security_group_ids="$(jq -r '.SECURITY_GROUP_IDS' <<< "$migration_ecspresso_env")"
 migration_subnet_ids_json="$(csv_to_json_array "$migration_subnet_ids")"
@@ -177,16 +254,29 @@ add_mask "$tfstate_url"
   echo "ECR_REPOSITORY_URL=${ecr_repository_url}"
   echo "WORKER_ECR_REPOSITORY_URL=${worker_ecr_repository_url}"
   echo "MIGRATION_ECR_REPOSITORY_URL=${migration_ecr_repository_url}"
+  echo "SCHEDULED_LOG_ECR_REPOSITORY_URL=${scheduled_log_ecr_repository_url}"
   echo "ECS_CLUSTER_NAME=${ecs_cluster_name}"
   echo "ECS_SERVICE_NAME=${ecs_service_name}"
   echo "WORKER_ECS_SERVICE_NAME=${worker_ecs_service_name}"
   echo "WORKER_QUEUE_URL=${worker_queue_url}"
   echo "WORKER_LOG_GROUP_NAME=${worker_log_group_name}"
+  echo "SCHEDULED_LOG_LOG_GROUP_NAME=${scheduled_log_log_group_name}"
   echo "TFSTATE_URL=${tfstate_url}"
   echo "CONTAINER_NAME=app"
   echo "CONTAINER_PORT=8080"
   echo "ASSIGN_PUBLIC_IP=DISABLED"
   echo "WORKER_CONTAINER_NAME=worker"
+  echo "SCHEDULED_LOG_CONTAINER_NAME=scheduled-log"
+  echo "SCHEDULED_LOG_SCHEDULE_NAME=${scheduled_log_scheduler_name}"
+  echo "SCHEDULED_LOG_TASK_DEFINITION_FAMILY=${scheduled_log_task_definition_family}"
+  echo "SCHEDULED_NOTIFICATION_CONTAINER_NAME=scheduled-log"
+  echo "SCHEDULED_NOTIFICATION_SCHEDULE_NAME=${scheduled_notification_scheduler_name}"
+  echo "SCHEDULED_NOTIFICATION_TASK_DEFINITION_FAMILY=${scheduled_notification_task_definition_family}"
+  echo "SCHEDULED_NOTIFICATION_TOPIC_ARN=${scheduled_notification_topic_arn}"
+  echo "SCHEDULED_LOG_TASK_CPU=256"
+  echo "SCHEDULED_LOG_TASK_MEMORY=512"
+  echo "SCHEDULED_NOTIFICATION_TASK_CPU=256"
+  echo "SCHEDULED_NOTIFICATION_TASK_MEMORY=512"
   echo "WORKER_DESIRED_COUNT=1"
   echo "WORKER_WAIT_TIME_SECONDS=20"
   echo "WORKER_MAX_MESSAGES=10"
